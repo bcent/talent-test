@@ -5,7 +5,7 @@
 打开你的 Supabase Dashboard：
 进入 SQL Editor，把下面 3 段 SQL 依次粘贴进去执行（可以一次全粘也行，中间会有分号）：
 ① 建表 + 索引 + RLS
-
+```SQL
 CREATE TABLE IF NOT EXISTS invites (
   id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   code         TEXT UNIQUE NOT NULL,
@@ -24,8 +24,9 @@ CREATE INDEX IF NOT EXISTS idx_invites_code ON invites(code);
 CREATE INDEX IF NOT EXISTS idx_invites_completed ON invites(completed_at) WHERE completed_at IS NOT NULL;
 
 ALTER TABLE invites ENABLE ROW LEVEL SECURITY;
-
+```
 ② 建 2 个 RPC 函数
+```SQL
 CREATE OR REPLACE FUNCTION validate_invite(p_code TEXT)
 RETURNS JSONB
 LANGUAGE plpgsql
@@ -109,9 +110,9 @@ $$;
 
 GRANT EXECUTE ON FUNCTION validate_invite(TEXT) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION complete_quiz(TEXT, TEXT, TEXT, TEXT, JSONB, JSONB) TO anon, authenticated;
-
+```
 ③ 生成 30 个邀请码
-
+```SQL
 INSERT INTO invites (code, note)
 SELECT
   substr(
@@ -127,3 +128,7 @@ FROM generate_series(1, 30)
 ON CONFLICT (code) DO NOTHING;
 
 SELECT code, note FROM invites ORDER BY created_at DESC LIMIT 30;
+```
+
+Demo：
+<img width="585" height="1130" alt="Screenshot 2026-07-15 at 21 37 07" src="https://github.com/user-attachments/assets/08e577e7-d873-4158-bfe1-117f60d26197" />
