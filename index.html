@@ -1,0 +1,1550 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="theme-color" content="#667eea">
+    <meta name="description" content="通过科学测试发现你的五维核心天赋优势">
+    <!-- 防浏览器缓存旧版本，确保结果页样式即时生效 -->
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
+    <title>五维核心天赋测评系统</title>
+    
+    <!-- 关键第三方 CDN 提前建立 TCP 连接，缩短首屏白屏时间 -->
+    <link rel="preconnect" href="https://cdn.tailwindcss.com" crossorigin>
+    <link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin>
+
+    <!-- Tailwind：必须同步加载才能在 HTML 解析阶段应用 utility class -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+    <!-- Supabase 客户端（用于邀请码校验 + 结果持久化 + 限一次测评） -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <!-- 项目运行时配置（Coze 开通 Supabase 集成后由平台注入或手动填入） -->
+    <script src="./config.js"></script>
+    <!-- 邀请码 & 测评状态服务（依赖 config 和 supabase-js） -->
+    <script src="./invite-service.js"></script>
+
+    <style>
+        body {
+            font-family: 'Noto Sans SC', sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            -webkit-tap-highlight-color: transparent;
+            padding-bottom: env(safe-area-inset-bottom);
+        }
+        .glass-panel {
+            background: rgba(255, 255, 255, 0.85);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.4);
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+        }
+        .option-card {
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        .option-card:active {
+            transform: scale(0.97);
+            background-color: rgba(102, 126, 234, 0.1);
+        }
+        .progress-bar-inner {
+            transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        .pulse-ring {
+            animation: pulse 2s infinite;
+        }
+        @keyframes pulse {
+            0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(118, 75, 162, 0.5); }
+            70% { transform: scale(1); box-shadow: 0 0 0 20px rgba(118, 75, 162, 0); }
+            100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(118, 75, 162, 0); }
+        }
+        .badge-stamp {
+            transform: rotate(-10deg);
+            border: 3px dashed rgba(255, 255, 255, 0.4);
+        }
+        .hide-scrollbar::-webkit-scrollbar { display: none; }
+        .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+        /* ============ 优化补充 ============ */
+        /* 无障碍：明显的键盘焦点态（鼠标点击不出现，键盘 Tab 才出现） */
+        .option-card:focus-visible {
+            outline: 2px solid #6366f1;
+            outline-offset: 2px;
+        }
+        /* 选中态：JS 只切换一个类，避免 8 个 utility class 频繁增删 */
+        .option-card.is-selected {
+            background-color: #eef2ff;
+            border-color: #6366f1;
+            box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.18);
+        }
+        .option-card.is-selected .opt-circle {
+            background-color: #10b981;
+            border-color: #10b981;
+        }
+        .option-card.is-selected .opt-circle > i {
+            opacity: 1 !important;
+        }
+        /* 加载动画：让文字有推进感 */
+        .loading-dots::after {
+            content: '';
+            display: inline-block;
+            width: 1.2em;
+            text-align: left;
+            animation: loading-dots 1.4s steps(4, end) infinite;
+        }
+        @keyframes loading-dots {
+            0%   { content: ''; }
+            25%  { content: '.'; }
+            50%  { content: '..'; }
+            75%  { content: '...'; }
+            100% { content: ''; }
+        }
+        /* 减少动效偏好用户 */
+        @media (prefers-reduced-motion: reduce) {
+            .option-card, .progress-bar-inner, .pulse-ring, .loading-dots::after {
+                animation: none !important;
+                transition: none !important;
+            }
+        }
+        /* 天赋认证红章徽章（右上角邮戳感） */
+        .postmark {
+            color: rgba(190, 18, 60, 0.65);           /* rose-800 */
+            border: 1.5px double rgba(244, 63, 94, 0.55); /* rose-500 */
+            background: rgba(255, 241, 242, 0.55);        /* rose-50 */
+            transform: rotate(-14deg);
+            box-shadow: inset 0 0 0 1px rgba(244, 63, 94, 0.12);
+            letter-spacing: 0;
+        }
+    </style>
+
+<script charset="UTF-8" id="LA_COLLECT" src="//sdk.51.la/js-sdk-pro.min.js"></script>
+<script>LA.init({id:"LF6uKdpxOEq7s6fX",ck:"LF6uKdpxOEq7s6fX",autoTrack:true,hashMode:true,screenRecord:true})</script>
+
+</head>
+<body class="min-h-screen text-gray-800 flex items-center justify-center p-0 sm:p-4 select-none overflow-x-hidden">
+    <div class="w-full max-w-md min-h-screen sm:min-h-[850px] sm:rounded-3xl shadow-2xl relative flex flex-col justify-between overflow-hidden bg-transparent">
+	
+	
+<div id="startScreen" class="w-full max-w-md mx-auto flex flex-col justify-between min-h-[inherit] pt-8 pb-6 px-5">
+    <div class="flex-1 flex flex-col justify-center items-center text-center">
+        <div class="w-20 h-20 bg-white/10 rounded-3xl backdrop-blur-md flex items-center justify-center text-4xl shadow-inner mb-6 border border-white/10 animate-bounce">🎯</div>
+        <h1 class="text-3xl font-black text-white tracking-wide drop-shadow-sm mb-3">AI 孩子多维天赋测评</h1>
+        <p class="text-sm text-indigo-100/90 max-w-[280px] leading-relaxed mb-8">发现孩子隐藏的核心潜能与优势特征</p>
+        
+        <div class="w-full bg-white/95 rounded-2xl p-5 shadow-xl border border-slate-100 text-left space-y-4 mb-6">
+            <h3 class="text-xs font-bold text-slate-400 tracking-wider uppercase mb-1">请填写宝贝信息，定制专属题目</h3>
+            
+            <div>
+                <label for="childName" class="block text-xs font-bold text-slate-600 mb-1.5">宝贝姓名</label>
+                <input type="text" id="childName" maxlength="12" autocomplete="off" placeholder="请输入孩子姓名" class="w-full px-3.5 py-2.5 text-sm border border-slate-200 rounded-xl focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 transition-all text-slate-700 font-medium">
+            </div>
+            
+            <div class="grid grid-cols-2 gap-4">
+                <div>
+                    <label class="block text-xs font-bold text-slate-600 mb-1.5">宝贝性别</label>
+                    <select id="childGender" class="w-full px-3.5 py-2.5 text-sm border border-slate-200 rounded-xl focus:outline-none focus:border-indigo-500 text-slate-700 font-medium bg-white">
+                        <option value="男">王子 👦</option>
+                        <option value="女">公主 👧</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-slate-600 mb-1.5">宝贝年龄段</label>
+                    <select id="childAgeGroup" class="w-full px-3.5 py-2.5 text-sm border border-slate-200 rounded-xl focus:outline-none focus:border-indigo-500 text-slate-700 font-medium bg-white">
+                        <option value="junior">7 - 12 岁</option>
+                        <option value="senior" selected>12 - 18 岁</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="pt-4">
+        <button onclick="startQuiz()" class="w-full py-4 bg-white text-indigo-600 font-black rounded-xl text-sm shadow-lg shadow-indigo-900/20 active:scale-[0.99] active:opacity-95 transition-all flex items-center justify-center gap-2">
+            开启专属天赋探索 <i class="fas fa-arrow-right text-xs"></i>
+        </button>
+    </div>
+</div>
+
+        <div id="quizScreen" class="hidden flex-1 flex flex-col justify-between p-5 bg-slate-50 relative z-10">
+            <div class="w-full">
+                <div class="flex justify-between items-center text-xs font-bold text-slate-400 mb-2">
+                    <span id="quizProgressText" class="bg-slate-200 text-slate-600 px-2 py-0.5 rounded-full">第 1 / 20 题</span>
+                    <span id="percentText" class="text-purple-600">5%</span>
+                </div>
+                <div class="w-full h-2 bg-slate-200 rounded-full overflow-hidden">
+                    <div id="progressBar" class="progress-bar-inner h-full bg-gradient-to-r from-indigo-500 to-purple-600 rounded-full" style="width: 5%"></div>
+                </div>
+            </div>
+
+            <div class="flex-1 flex flex-col justify-center my-4">
+                <div class="glass-panel rounded-2xl p-6 shadow-sm border border-slate-200/50 min-h-[140px] flex items-center justify-center">
+                    <h2 id="questionText" class="text-lg font-bold text-slate-800 text-center leading-relaxed">
+                        题目加载中...
+                    </h2>
+                </div>
+            </div>
+
+            <div id="optionsContainer" class="space-y-3.5 mb-2 overflow-y-auto max-h-[360px] hide-scrollbar pr-1">
+                </div>
+
+            <div class="flex items-center gap-4 pt-3 border-t border-slate-200/60">
+                <button id="prevBtn" onclick="prevQuestion()" class="flex-1 py-3.5 border border-slate-300 text-slate-500 font-medium rounded-xl text-sm active:bg-slate-100 transition-colors disabled:opacity-40 disabled:pointer-events-none" disabled>
+                    <i class="fas fa-arrow-left mr-1.5"></i> 上一题
+                </button>
+            </div>
+        </div>
+
+        <div id="loadingScreen" class="hidden flex-1 flex flex-col items-center justify-center p-6 bg-slate-50 text-center relative z-10">
+            <div class="space-y-6">
+                <div class="relative w-20 h-20 mx-auto">
+                    <div class="absolute inset-0 border-4 border-purple-200 rounded-full"></div>
+                    <div class="absolute inset-0 border-4 border-purple-600 rounded-full border-t-transparent animate-spin"></div>
+                </div>
+                <div class="space-y-2">
+                    <h3 class="text-lg font-bold text-slate-800"><span class="loading-dots">正在构建天赋画像</span></h3>
+                    <p class="text-xs text-slate-400 max-w-[240px] mx-auto">正在根据映射矩阵匹配思维权重，融合并生成深度特质报告...</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- 邀请码拦截页（无邀请码 / 无效邀请码 / 网络错误时显示） -->
+        <div id="inviteBlockScreen" class="hidden flex-1 flex flex-col items-center justify-center p-6 bg-slate-50 relative z-10">
+            <div class="glass-panel rounded-2xl p-6 shadow-sm border border-slate-200/50 max-w-md w-full">
+                <div id="inviteBlockMessage" class="text-[13px] text-slate-600 leading-[1.85]"></div>
+                <p class="mt-5 pt-4 border-t border-slate-100 text-[11px] text-slate-400 text-center leading-[1.7]">
+                    <i class="fas fa-circle-info text-indigo-400 mr-1"></i>
+                    未收到邀请码？请联系活动组织方获取。
+                </p>
+            </div>
+        </div>
+
+        <!-- 历史记录页（已完成测评的受邀人再次访问时显示） -->
+        <div id="historyScreen" class="hidden flex-1 flex flex-col bg-slate-50 relative z-10 overflow-y-auto">
+            <div class="px-5 pt-6 pb-3">
+                <div class="flex items-center justify-between mb-3">
+                    <span class="text-[10px] font-bold uppercase tracking-widest text-slate-400">History</span>
+                    <span class="text-xs font-medium text-emerald-700 bg-emerald-50 border border-emerald-100 px-2 py-0.5 rounded-full flex items-center gap-1">
+                        <i class="fas fa-circle-check text-[10px]"></i>已完成
+                    </span>
+                </div>
+                <h1 id="historyTitle" class="text-xl font-bold text-slate-800 mb-1">你的天赋测评报告</h1>
+                <p id="historySubtitle" class="text-[13px] text-slate-500 leading-relaxed">
+                    点击下方卡片可查看完整测评详情。
+                </p>
+                <div class="h-px bg-slate-200/70 my-4"></div>
+            </div>
+            <div id="historyContent" class="px-5 pb-6 space-y-3"></div>
+        </div>
+
+        <div id="resultScreen" class="hidden flex-1 flex flex-col bg-slate-50 relative z-10 overflow-y-auto">
+            <div class="px-5 pt-6 pb-3">
+                <div class="flex items-center justify-between mb-4">
+                    <span class="text-[11px] font-mono text-slate-400 tracking-widest uppercase">Talent Report</span>
+                    <span class="text-[11px] font-medium text-indigo-600 bg-indigo-50 px-2.5 py-0.5 rounded-full flex items-center gap-1">
+                        <i class="fas fa-check-circle text-[10px]"></i>测评完成
+                    </span>
+                </div>
+                <div class="flex items-center gap-3">
+                    <span id="resultIcon" class="text-4xl leading-none">🦅</span>
+                    <h2 id="resultTitle" class="text-xl font-black text-slate-800 tracking-wide">思者一鹰的视野</h2>
+                </div>
+            </div>
+
+            <div class="mx-5 h-px bg-slate-200/70"></div>
+
+            <div class="px-4 pt-5 space-y-4 pb-8 flex-1">
+                <!-- 卡片 0 · 核心特质速览（含天赋认证徽章 + 契合度） -->
+                <section class="glass-panel rounded-2xl p-5 shadow-sm border border-slate-200/50 relative overflow-hidden">
+                    <div class="absolute -right-3 -top-3 w-16 h-16 rounded-full postmark flex flex-col items-center justify-center text-[8px] font-black tracking-tighter select-none pointer-events-none">
+                        <span>天赋认证</span>
+                        <span class="scale-90 border-t border-rose-400/60 mt-0.5 pt-0.5">TALENT</span>
+                    </div>
+                    <div class="flex items-center gap-2 flex-wrap mb-3 pr-14">
+                        <span id="resultSubtitle" class="text-[12px] font-bold text-indigo-700 bg-indigo-50 border border-indigo-100 px-2.5 py-0.5 rounded-full">核心特质：守护者</span>
+                        <span id="matchScore" class="text-[12px] font-mono font-semibold text-purple-700 bg-purple-50 border border-purple-100 px-2.5 py-0.5 rounded-full">契合度 80%</span>
+                    </div>
+                    <p id="resultDesc" class="text-[13px] text-slate-700 leading-[1.85] tracking-wide"></p>
+                </section>
+
+                <!-- 卡片 1 · 核心特质深度解读 -->
+                <section class="glass-panel rounded-2xl p-5 shadow-sm border border-slate-200/50">
+                    <h3 class="text-base font-bold text-slate-800 flex items-center gap-2 mb-4">
+                        <i class="fas fa-book-open text-indigo-500 text-sm"></i>核心特质解读
+                    </h3>
+                    <div id="full-status"  class="mb-4 pl-3.5 border-l-2 border-indigo-400 text-[13px] leading-[1.85] text-slate-700 whitespace-pre-line"></div>
+                    <div id="full-career"  class="mb-4 pl-3.5 border-l-2 border-purple-400 text-[13px] leading-[1.85] text-slate-700 whitespace-pre-line"></div>
+                    <div id="full-emotion" class="pl-3.5 border-l-2 border-rose-400 text-[13px] leading-[1.85] text-slate-700 whitespace-pre-line"></div>
+                </section>
+
+                <!-- 卡片 2 · 专属测评报告 -->
+                <section class="glass-panel rounded-2xl p-5 shadow-sm border border-slate-200/50">
+                    <h3 class="text-base font-bold text-slate-800 flex items-center gap-2 mb-4">
+                        <i class="fas fa-file-medical-alt text-rose-500 text-sm"></i>测评报告
+                    </h3>
+
+                    <div id="report-red-title" class="text-[13px] font-semibold text-rose-700 border-l-2 border-rose-400 bg-rose-50/60 pl-3.5 pr-3 py-2.5 rounded-r-lg mb-5 leading-relaxed"></div>
+
+                    <h4 class="text-[13px] font-semibold text-slate-800 mb-2.5 flex items-center">
+                        <i class="fas fa-search-minus mr-2 text-indigo-500 text-xs"></i>深度问题发现
+                    </h4>
+                    <ul id="report-problems" class="list-decimal pl-5 text-[13px] leading-[1.85] text-slate-700 space-y-2 mb-5 marker:text-indigo-400 marker:font-bold"></ul>
+
+                    <h4 class="text-[13px] font-semibold text-slate-800 mb-2.5 flex items-center">
+                        <i class="fas fa-graduation-cap mr-2 text-indigo-500 text-xs"></i>常见偏科高危表现
+                    </h4>
+                    <div class="space-y-2.5 pt-1">
+                        <div class="text-[13px] leading-relaxed"><span class="inline-block text-[11px] font-semibold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded mr-2 align-middle">文科</span><span id="subject-arts"    class="text-slate-700 align-middle"></span></div>
+                        <div class="text-[13px] leading-relaxed"><span class="inline-block text-[11px] font-semibold text-purple-700 bg-purple-50 px-2 py-0.5 rounded mr-2 align-middle">理科</span><span id="subject-science" class="text-slate-700 align-middle"></span></div>
+                        <div class="text-[13px] leading-relaxed"><span class="inline-block text-[11px] font-semibold text-rose-700 bg-rose-50 px-2 py-0.5 rounded mr-2 align-middle">英语</span><span id="subject-english" class="text-slate-700 align-middle"></span></div>
+                        <div id="subject-summary" class="border-t border-slate-100 pt-3 mt-2 text-center italic text-slate-500 text-xs"></div>
+                    </div>
+                </section>
+
+                <!-- 卡片 3 · 细化职业规划 -->
+                <section class="glass-panel rounded-2xl p-5 shadow-sm border border-slate-200/50">
+                    <h3 class="text-base font-bold text-slate-800 flex items-center gap-2 mb-3">
+                        <i class="fas fa-briefcase text-emerald-500 text-sm"></i>职业规划
+                    </h3>
+
+                    <p id="career-main-title" class="text-[13px] leading-[1.75] text-slate-500 mb-4"></p>
+
+                    <div id="career-jobs-box" class="space-y-2.5 mb-5"></div>
+
+                    <h4 class="text-[13px] font-semibold text-slate-800 mb-2.5 flex items-center">
+                        <i class="fas fa-brain mr-2 text-emerald-500 text-xs"></i>大脑特征与职业影响
+                    </h4>
+                    <div id="career-impact" class="text-[13px] leading-[1.85] text-slate-700 pl-3.5 border-l-2 border-emerald-400 whitespace-pre-line"></div>
+                </section>
+
+            </div>
+        </div>
+		
+		<script>
+        // 五大天赋配置映射字典（优化：已剥离左右脑信息至独立 brain 字段）
+        const talentConfig = {
+            sizhe: {
+                // =============== 1. 保留你原本的所有基础配置 ===============
+                name: "思者一鹰的视野",
+                icon: "🦅",
+                color: "#a855f7",
+                brain: "右脑极度发达，左脑相对很弱",
+                desc: "智在九天、创意无限、天马行空、活在梦里。大脑袋装着10万个想法，脑洞不开则已，一开便无限大，创造力与创新力都超强！特性表现：白日梦、很懒惰、忘性大、不记仇、善顶嘴、找借口、很善良、拥有高纬度小聪明。",
+                advice: "抗拒学习、装模作样，快速记忆、眨眼就忘。发挥你独有的【无中生有】潜力！警惕‘眼高手低、易放弃与因懒惰而聪明’的特质。允许大脑天马行空，但应刻意提升执行落地能力，将想法切实转化为成果。",
+                combo: "思想家",
+                tags: ["99% 创造力", "65% 想象力", "40% 观察力", "小聪明", "脑洞无限"],
+
+                // =============== 2. 紧接着在后面，追加新版三大核心数据 ===============
+                // 版块一：完整解读
+                fullInterpretation: {
+                    status: "你当前的状态：\n综合能量显示你是思者人格，像雄鹰拥有广阔无边的视野，右脑创造力顶尖，脑海永远充满新奇想法、脑洞源源不断，天性善良不爱记仇。但你专注力薄弱、惰性较强，热爱空想却难以落地行动，眼高手低，喜欢找借口逃避难题，记性差，学到的知识转眼就遗忘。时常沉浸白日梦，对枯燥重复的事务极度抗拒，容易自大自负，总觉得自身聪慧，不屑踏实沉淀，长久停留在空想阶段，很难收获实际成果。",
+                    careerAdvise: "事业建议：\n你与生俱来的创意、想象力是稀缺天赋，适合新媒体、设计、策划、写作等创新类赛道。一定要改掉空想惰性，想到方案立刻落地执行，不要只停留在脑海幻想。提升自身专注力，沉下心打磨专业基础，不要好高骛远、轻视基础工作。减少盲目自大，多接纳他人务实建议，平衡创意与现实，将天马行空的想法转化为实际成果，你的创新天赋才能真正发挥价值。",
+                    emotionAdvise: "情感建议：\n你浪漫心软，总能制造新鲜感，但容易三分钟热度，对待感情缺乏长久耐心。遇到矛盾习惯找借口回避，不愿直面问题，沉浸自我幻想忽略伴侣真实感受。不要总活在自己的理想期待里，接纳感情平淡真实的一面，减少不切实际的幻想。学会专注一段关系，遇事主动沟通，不要轻易逃避，长久稳定的爱意，离不开脚踏实地的陪伴，而非凭空想象的浪漫。"
+                },
+                
+                // 版块二：专属测评报告
+                reportCard: {
+                    redTitle: "你的创造力高于99%的人 但专注力薄弱容易空想摆烂",
+                    problems: [
+                        "脑洞丰富、想象力极强，反应灵敏口才出众，一堂45分钟课程仅能专注15分钟左右，大脑思绪漫天飞舞，总幻想各类新鲜事物，难以沉下心钻研枯燥知识点；上课神游放空，课后不愿复盘巩固，新奇创意一点就通，课本基础内容视而见，想法很多落地极少，白白浪费创新天赋。",
+                        "不是记忆力不足，只对有趣、有画面感的内容记忆深刻，枯燥文字、公式会本能排斥，强迫背诵效率极低，转眼就遗忘；沉浸自我幻想，脱离课本现实，眼高手低，总觉得知识简单，不愿踏实练习。",
+                        "这样的天赋，创意、表达类事情一点就通，样样都想出彩，唯独学习缺少踏实落地的耐心，学习的秘诀是设立短期小目标约束自己，没有目标克制浮躁，很难沉下心深耕，脑洞丰富的你，适配图像化趣味高效学习法！",
+                        "如何延长专注时长、把创意落地到学习，才是越学越轻松的学习秘籍。"
+                    ],
+                    subjects: {
+                        arts: "懒得背诵复盘、作文空想无素材、作业敷衍了事",
+                        science: "上课走神不听逻辑、拒绝重复刷题、基础漏洞多",
+                        english: "内心抵触单词背诵、不愿反复练习、记完快速遗忘",
+                        summary: "学习好坏不只看聪明，踏实落地的行动力决定最终结果"
+                    }
+                },
+                
+                // 版块三：细化职业规划
+                careerPlanning: {
+                    mainTitle: "右脑高度活跃，想象力天马行空、思维灵动跳脱的人更适合的事业参考",
+                    jobs: [
+                        { type: "首选职业", name: "原创创意设计类", score: "90分", desc: "画面感知力、想象力天赋拉满，脑洞源源不断，擅长视觉创作、故事构思，审美独特，不喜欢照搬模板，擅长打造新颖原创内容", tags: ["视觉设计人才", "剧本创作人才", "原画插画人才"] },
+                        { type: "次选职业", name: "新媒体传媒表达类", score: "80分", desc: "思维鲜活有趣，语言表达有感染力，脑洞丰富擅长制造新鲜感，擅长输出有趣内容，能快速抓住大众注意力，镜头表现力强", tags: ["短视频编导人才", "自媒体创作人才", "文案编剧人才"] },
+                        { type: "可选职业", name: "趣味研学科普类", score: "70分", desc: "好奇心旺盛，发散思维极强，擅长把枯燥知识转化为生动有趣的内容，擅长通俗化讲解，擅长启发他人想象力", tags: ["研学讲师人才", "趣味科普讲师", "艺术启蒙老师"] },
+                        { type: "备选职业", name: "文创策划美学类", score: "60分", desc: "审美新颖独特，擅长融合多元新鲜元素，打造特色文创产品，擅长打造氛围感、故事感，拥有独特的艺术审美视角", tags: ["文创策划人才", "美学搭配人才", "潮品设计专员"] }
+                    ],
+                    impactAnalysis: "思者创意右脑极度发达，想象力、发散思维、审美为核心天赋，思维不受条条框框束缚，热爱新鲜事物，擅长创意、内容、美学相关工作，厌恶死板、重复、标准化流程。\n短板是专注力薄弱，难以长期坚持枯燥机械的重复工作，缺乏耐心深耕基础，纯理论、无创意空间的刻板工作极易产生厌学、厌业情绪。"
+                }
+            }, // 👈 这是思者（sizhe）结束的花括号，下面接你的下一个选手（如dezhe/xingzhe）
+
+            xingzhe: {
+                // =============== 保留您原本的基础配置 ===============
+                name: "行者一黑马的坚韧",
+                icon: "🐎",
+                color: "#3b82f6",
+                brain: "逻辑实操脑发育均衡，抗压专注力高",
+                desc: "坚韧踏实、做事落地执行力极强，认准目标便会埋头坚持，责任心刻在骨子里。性格内敛沉默，不擅长表达情绪，内心防备心重。特性表现：为人固执不懂变通、记仇且很难放下过往伤害、思维保守。",
+                advice: "工作中学会灵活变通，接纳多元化的做事方式。适当信任团队伙伴、分工协作，多和同行交流思路，向前深耕才会持续成长。",
+                combo: "实干家",
+                tags: ["99% 记忆力", "90% 执行力", "50% 变通力", "内敛沉稳", "固执坚守"],
+
+                // =============== 追加新版三大核心数据 ===============
+                fullInterpretation: {
+                    status: "你当前的状态：\n综合能量显示你属于行者人格，如黑马一般坚韧踏实，记忆力出众，做事落地执行力极强，认准目标便会埋头坚持，责任心刻在骨子里。你性格内敛沉默，不擅长表达情绪，内心防备心重，害怕受伤所以习惯性封闭自己，为人固执不懂变通，记仇且很难放下过往伤害。做事极度务实，拒绝虚浮不切实际的规划，但思维保守、不懂灵活转变，一旦遭遇变故很容易钻牛角尖，长期独自消化压力，很难向他人倾诉脆弱。",
+                    careerAdvise: "事业建议：\n你过目不忘的记忆力与超强执行力是核心优势，深耕专业领域会稳步出彩。但不要过度固执死板，工作中学会灵活变通，接纳多元化的做事方式。你习惯独自扛下所有工作任务，适当信任团队伙伴、分工协作，能大幅减轻自身负担。不必时刻紧绷、高度警惕外界，适度放下防备，多和同行交流思路，会收获更多机遇；过往失败不必耿耿于怀，向前深耕才会持续成长。",
+                    emotionAdvise: "情感建议：\n你内心重情感恩，默默为另一半承担责任，但沉默内敛的性格很容易让对方感受不到爱意。不要把心事全部藏在心底，适当表达情绪与心意，才能减少感情隔阂。你骨子里固执，发生矛盾不愿主动退让，容易冷战消耗关系，学会柔软沟通，放下心中芥蒂，不要揪着过往矛盾反复回想。感情需要双向奔赴，长久封闭内心，只会慢慢推开真心待你的人。"
+                },
+                reportCard: {
+                    redTitle: "你的记忆力高于99%的人 但性格固执不懂灵活变通",
+                    problems: [
+                        "记忆扎实、做事踏实有责任心，沉默内敛不爱分心闲聊，但思维固化不懂变通，一堂课只听固定单一解题思路，拒绝接纳其他方法；习惯独自埋头死学，不愿请教他人，死记硬背知识点，不懂得举一反三，学习只会单一重复，效率低下。",
+                        "不是吸收能力差，内心防备心重，很难接纳老师、同学给出的新型学习方式，认准一套方法就不肯改变；过往学习的挫折会一直记在心里，遇到相似题型就心生抵触，思维死板不会灵活转换思路。",
+                        "这样的天赋，生活做事靠谱有担当，认准的事一定会坚持到底，学习的秘诀是学会变通、放下过往心结，不懂得灵活调整方法，再强的记忆力也难以提分，沉稳自律的你，适配系统化闭环学习技巧！",
+                        "如何灵活调动思维、放下内心执念，才是越学越轻松的学习秘籍。"
+                    ],
+                    subjects: {
+                        arts: "死记硬背不总结、答题模板单一、不会灵活作答",
+                        science: "死守固有解题步骤、拒绝简便算法、难题不会转换思路",
+                        english: "机械重复背诵、不懂场景活用、阅读不会变通理解",
+                        summary: "学习好坏不只看坚持，思维的灵活度决定最终结果"
+                    }
+                },
+                careerPlanning: {
+                    mainTitle: "左右脑均衡稳重，性格隐忍坚韧、执行力极强的人更适合的事业参考",
+                    jobs: [
+                        { type: "首选职业", name: "硬核技术研发类", score: "90分", desc: "专注力持久，沉得住气深耕钻研，动手实操能力突出，有超强耐力，能长期打磨技术，做事严谨守规则，愿意日复一日沉淀专业能力", tags: ["工程技术人才", "设备研发人才", "编程技术人才"] },
+                        { type: "次选职业", name: "精工实操匠人类", score: "80分", desc: "踏实专一，追求细节精度，耐得住枯燥重复打磨，动手能力优秀，做事一步一个脚印，不投机取巧，擅长把一件事做到极致", tags: ["手工匠人人才", "精密加工人才", "汽修实操人才"] },
+                        { type: "可选职业", name: "合规质检法务类", score: "70分", desc: "原则底线清晰，守规矩、重标准，做事一丝不苟，不会投机取巧，细心核对每一处细节，严谨规避漏洞，稳定性极强", tags: ["合规法务人才", "质检审核人才", "风险核查专员"] },
+                        { type: "备选职业", name: "项目后勤保障类", score: "60分", desc: "耐力充足，落地执行力稳定，擅长长期稳步落实繁琐事务，踏实靠谱，交代的任务必定完整落地，稳定不出差错", tags: ["仓储管理人才", "项目后勤人才", "设备运维专员"] }
+                    ],
+                    impactAnalysis: "行者逻辑实操脑发育均衡，抗压、专注、坚持是核心天赋，性格内敛踏实，不爱投机取巧，适合深耕技术、标准化、长期落地类工作，做事靠谱，值得托付长期稳定项目。\n短板是思维偏固化，不擅长灵活变通，排斥多变、无固定规则的创意类工作，频繁变动、每天全新无标准的工作会让内心缺乏安全感。"
+                }
+            },
+
+            dezhe: {
+                // =============== 保留您原本的基础配置（请根据实际情况微调 name/icon/color 等） ===============
+                name: "德者一大象的胸怀",
+                icon: "🐘",
+                color: "#10b981",
+                brain: "情感感知脑发育突出，共情力强",
+                desc: "宽厚包容、待人温和、懂得体恤身边所有人。习惯优先照顾家人与朋友的感受，遇事习惯妥协退让，不喜与人发生争执。特性表现：过度内耗、习惯性拖延、做事节奏缓慢、害怕冲突而压抑自身需求。",
+                advice: "学会适度为自己考虑，守住自身底线，改掉拖延习惯，稳步提升个人能力，摆脱内耗，拥有松弛安稳的人生。",
+                combo: "守护者",
+                tags: ["99% 观察力", "85% 共情力", "45% 专注力", "温和善良", "包容稳妥"],
+
+                // =============== 追加新版三大核心数据 ===============
+                fullInterpretation: {
+                    status: "你当前的状态：\n综合能量显示你是典型德者人格，拥有大象一般宽厚包容的胸怀，观察力拉满，待人温和善良、懂得体恤身边所有人。习惯优先照顾家人与朋友的感受，遇事习惯妥协退让，不喜与人发生争执。但你容易过度内耗，习惯性拖延、做事节奏缓慢，害怕冲突而压抑自身需求，长期委屈自己迁就他人，内心积压疲惫，容易身心俱疲，安于现状不愿主动突破舒适圈。只有学会适度为自己考虑，守住自身底线，才能摆脱内耗，拥有松弛安稳的人生。",
+                    careerAdvise: "事业建议：\n你细心靠谱、公信力强，是团队里最值得托付的人，但安逸心态会限制你的发展。不要总害怕改变、不敢争取机会，不必一味迁就同事与领导的安排，合理表达自身诉求。你超强的观察力适合服务、文职、教育类稳定赛道，试着主动规划成长目标，改掉拖延的习惯，稳步提升个人能力，不用困在一成不变的环境里虚度时光。过度妥协换不来尊重，有底线的温和，才会让你的努力被看见。",
+                    emotionAdvise: "情感建议：\n你在感情里习惯性付出、体贴包容，总下意识迁就伴侣，却常常忽略自己的情绪。不要一味忍让包容所有矛盾，长久压抑委屈只会不断消耗感情。遇到分歧温和沟通即可，不必害怕争吵而一味妥协，学会说出内心真实需求。家人与爱人值得善待，但你同样值得被用心呵护，先照顾好自己，才能长久温暖身边人。"
+                },
+                reportCard: {
+                    redTitle: "你的观察力高于99%的人 但缺乏目标容易拖延摆烂",
+                    problems: [
+                        "心思细腻共情力极强，擅长留意身边人的情绪变化，一堂课45分钟很容易分心关注旁人，很难专注自身学习；习惯迁就他人，别人的需求永远排在自己前面，大量精力消耗在照顾别人身上，留给学习的时间严重不足，做事节奏缓慢，遇事习惯性拖延，明明看得懂知识点，却总推后不完成。",
+                        "不是理解能力弱，只是天性追求安稳无冲突，遇到有难度、有压力的学习任务下意识逃避，安于现状不愿主动突破；简单温和的内容可以慢慢吃透，有竞争、有挑战的学习任务会心生抗拒，不敢主动争取名次。",
+                        "这样的天赋，生活待人处处周到包容，唯独对自己缺少规划，学习的秘诀是建立自我底线与成长目标，没有目标驱动自己向前，很容易随波逐流，温和细心的你，更适合稳步踏实的长线学习方法！",
+                        "如何建立自我边界、合理分配精力，才是越学越轻松的学习秘籍。"
+                    ],
+                    subjects: {
+                        arts: "不愿梳理框架、背诵拖延、被动完成任务",
+                        science: "畏惧难题、不爱动脑思考、基础止步不前",
+                        english: "畏难逃避、反复拖延背诵、刷题敷衍应付",
+                        summary: "学习好坏不只看勤奋，内心的自我期待决定最终结果"
+                    }
+                },
+                careerPlanning: {
+                    mainTitle: "感官细腻共情力强，性格温柔包容、有同理心的人更适合的事业参考",
+                    jobs: [
+                        { type: "首选职业", name: "心理教育服务类", score: "90分", desc: "天生擅长捕捉他人细微情绪，包容心强，耐心充足，善于倾听安抚，愿意包容他人缺点，擅长疏导情绪、陪伴成长，是天然的陪伴型从业者", tags: ["心理咨询人才", "青少年成长导师", "早教陪护人才"] },
+                        { type: "次选职业", name: "精细文职统筹类", score: "80分", desc: "心思缜密温和，做事稳重细致，情绪稳定不易急躁，擅长整理资料、规划流程，待人温和友善，沟通柔和不易发生冲突", tags: ["行政文秘人才", "档案规划人才", "人事内勤人才"] },
+                        { type: "可选职业", name: "健康医护调理类", score: "70分", desc: "心怀善意、责任心极强，做事细心有耐心，愿意花时间照料他人，细致关注细节，做事稳妥可靠，有很强的责任心与爱心", tags: ["护理医护人才", "中医健康调理人才", "母婴养护人才"] },
+                        { type: "备选职业", name: "公益社群关怀类", score: "60分", desc: "为人宽厚心软，乐于无私付出，习惯换位思考，懂得体谅弱势群体，擅长维系温暖的社群氛围，亲和力拉满", tags: ["社工公益人才", "社群关怀顾问", "社区服务专员"] }
+                    ],
+                    impactAnalysis: "德者情感感知脑发育突出，共情、观察力、耐心为核心天赋，性格温和不喜冲突，擅长细腻、陪伴、服务类工作，做事稳扎稳打，待人真诚，很容易获得他人信任。\n短板是容易过度讨好他人，不懂拒绝，不适合高强度竞争、高压博弈、冲突频繁的商务竞争岗位，长期高强度对抗会产生巨大心理内耗。"
+                }
+            },
+
+xuezhe: {
+                // =============== 保留您原本的基础配置 ===============
+                name: "学者一狼群的纪律",
+                icon: "🐺",
+                color: "#14b8a6",
+                brain: "左脑逻辑高度发达，全脑指标均衡",
+                desc: "冷静自律、左右脑均衡发展，专注力、逻辑力、记忆力在线，思维清晰。习惯独立思考、凡事以事实为判断依据，不喜欢抱怨。特性表现：应变能力偏弱、过分死守规则、凡事追求完美、不懂适度放松。",
+                advice: "不必过度追求完美，适当放宽标准。学会随机应变，面对突发状况灵活调整方案。分清职责边界，适度放松紧绷的状态，劳逸结合才能长久稳定发展。",
+                combo: "思想及执行者",
+                tags: ["99% 专注力", "95% 逻辑力", "90% 记忆力", "严谨自律", "完美主义"],
+
+                // =============== 追加新版三大核心数据 ===============
+                fullInterpretation: {
+                    status: "你当前的状态：\n综合能量显示你为学者人格，如同狼群冷静自律，左右脑均衡发展，专注力、逻辑力、记忆力、想象力均衡在线，思维清晰、自控力极强，天生热爱学习，能吃苦、凡事讲究条理秩序。你习惯独立思考、凡事以事实为判断依据，不喜欢抱怨，做事务实严谨；但应变能力偏弱，过分死守规则，不懂灵活变通，习惯操心身边所有人，凡事追求完美，给自己施加巨大压力，不懂适度放松，紧绷的状态容易带来精神疲惫。",
+                    careerAdvise: "事业建议：\n均衡的大脑天赋让你适配绝大多数赛道，严谨自律、逻辑清晰是你的核心竞争力，深耕学习类、技术、数据分析岗位极易出彩。不必过度追求完美，适当放宽标准，减少不必要的内耗。不要死守固有规则，学会随机应变，面对突发状况灵活调整方案。你习惯独自包揽所有工作，不用事事操心所有人，分清职责边界，适度放松紧绷的状态，劳逸结合才能长久稳定发展。",
+                    emotionAdvise: "情感建议：\n你理智克制，很少情绪化，会默默规划两个人的未来，踏实靠谱值得依靠。但过度理性容易缺少温情，凡事讲道理忽略伴侣情绪感受，死守自身标准不懂包容差异。不必事事追求条理规整，接纳感情里不完美、随性的一面。遇到分歧不要单纯用逻辑评判对错，多共情对方情绪，放下严苛标准，柔软的包容，会让亲密关系更加温暖长久。"
+                },
+                reportCard: {
+                    redTitle: "你的专注力高于99%的人 但过度追求完美不懂松弛",
+                    problems: [
+                        "自律沉稳、逻辑清晰，能全程跟上课堂节奏，但凡事追求极致完美，一道题目反复纠结细节，浪费大量学习时间；习惯包揽全部学习任务，给自己施加过重压力，不懂适度休息，长期紧绷精神，学习极易疲惫，遇事过度思虑，缺少随机应变的能力。",
+                        "不是学习能力不足，死守规则与标准，不接受不完美的答案，稍微超出固有框架的题型就卡顿；习惯独自钻研，不懂适度求助，所有知识点都想做到百分百掌握，给自己造成巨大心理负担。",
+                        "这样的天赋，做任何事条理清晰、自律能吃苦，学习的秘诀是放下完美主义，分清主次学习目标，事事苛求完美只会消耗自身精力，均衡全能的你，适配分层轻量化学习规划！",
+                        "如何平衡严谨与松弛、分清学习主次，才是越学越轻松的学习秘籍。"
+                    ],
+                    subjects: {
+                        arts: "反复纠结细节、背诵追求一字不差、做题速度缓慢",
+                        science: "钻牛角尖死磕难题、忽略基础简单题型、应变不足",
+                        english: "逐字翻译过度纠结、害怕出错不敢答题、耗时过长",
+                        summary: "学习好坏不只看自律，懂得取舍的心态决定最终结果"
+                    }
+                },
+                careerPlanning: {
+                    mainTitle: "左脑逻辑高度发达，理性自律、严谨善思的人更适合的事业参考",
+                    jobs: [
+                        { type: "首选职业", name: "数理科研分析类", score: "90分", desc: "逻辑推理、拆解问题能力顶尖，擅长深度理性思考，对数字、规律敏感度极高，擅长拆解复杂难题，冷静客观，擅长数据分析推演", tags: ["理科科研人才", "大数据分析人才", "数理研究员"] },
+                        { type: "次选职业", name: "系统教研研发类", score: "80分", desc: "条理清晰，擅长归纳总结、搭建完整知识体系，擅长梳理逻辑框架，系统化输出内容，擅长分层拆解知识点，教学逻辑清晰", tags: ["学科教师人才", "课程研发人才", "题库编撰人才"] },
+                        { type: "可选职业", name: "金融风控测算类", score: "70分", desc: "心态冷静客观，擅长数字计算、长期规划，对风险预盘敏锐，做事缜密周全，擅长梳理收支、测算收益、规避财务风险", tags: ["财务风控人才", "投资分析人才", "财税规划专员"] },
+                        { type: "备选职业", name: "全局方案规划类", score: "60分", desc: "做事周全缜密，擅长搭建长期完整方案，考虑多重变量，规划能力突出，条理清晰，能统筹复杂长线项目", tags: ["城市规划人才", "企业战略策划人才", "流程优化专员"] }
+                    ],
+                    impactAnalysis: "学者逻辑左脑优势突出，理性、自律、归纳分析是核心天赋，擅长和数据、理论、体系化内容打交道，做事条理分明，擅长深度钻研复杂问题，追求严谨准确。\n短板是完美主义严重，容易过度纠结细节，不懂变通取舍，共情能力偏弱，不擅长纯粹情绪安抚、高强度社交应酬类工作，过多人情内耗会消耗自身精力。"
+                }
+            },
+yingzhe: {
+                // =============== 保留您原本的基础配置 ===============
+                name: "赢者一狮子的魄力",
+                icon: "🦁",
+                color: "#ef4444",
+                brain: "右脑想象力、领导力顶尖，领袖人格",
+                desc: "拥有雄狮天生的王者魄力，敢闯敢拼、胆识过人，永远不甘平庸。实干有野心，目标感极强，愿意为理想吃苦。特性表现：极好面子、胜负欲爆棚、不服管束、脾气急躁、功利心重、偏爱冒险。",
+                advice: "收敛急躁火爆的脾气，懂得收敛骄傲，接纳他人的优秀。不要把职场的控制欲带入亲密关系，兼顾野心与稳重，你的领袖天赋才能长久支撑事业登顶。",
+                combo: "开创领袖",
+                tags: ["99% 领导力", "95% 想象力", "90% 应变力", "胆识过人", "王者野心"],
+
+                // =============== 追加新版三大核心数据 ===============
+                fullInterpretation: {
+                    status: "你当前的状态：\n综合能量显示你是赢者人格，拥有雄狮天生的王者魄力，右脑想象力、领导力天赋顶尖，敢闯敢拼、胆识过人，永远不甘平庸，立志成为人群中的先行者。你实干有野心，目标感极强，愿意为理想吃苦，但极好面子、胜负欲爆棚，不服任何人管束，脾气急躁，骄傲自恋，偏爱冒险，偶尔冲动闯祸，好胜心驱使你凡事必须争第一，一旦受挫很难接受失败，功利心较重，习惯把得失放在第一位。",
+                    careerAdvise: "事业建议：\n你的领导力、随机应变能力、远大格局是难得的天赋，非常适合管理、创业、开拓市场类工作，敢闯敢拼能抓住时代红利。但收敛急躁火爆的脾气，不要凡事争强好胜，懂得收敛骄傲，接纳他人的优秀。不必过度看重面子得失，偶尔放下胜负欲，正视自身短板。冒险开拓的同时做好风险规划，减少冲动决策，兼顾野心与稳重，你的领袖天赋才能长久支撑事业登顶。",
+                    emotionAdvise: "情感建议：\n你大方浪漫、擅长哄人，愿意为爱人创造优质生活，但极强的好胜心容易在相处中和伴侣争高低，骄傲的性格很难主动低头认错。不要把职场的控制欲、胜负欲带入亲密关系，感情不存在输赢，不必事事压对方一头。适度放下面子，受挫、产生矛盾时主动沟通，不必硬撑强势；减少功利化看待感情，真心陪伴远比外在条件更能维系长久爱意。"
+                },
+                reportCard: {
+                    redTitle: "你的想象力领导力高于99%的人 但胜负欲强急躁缺乏耐心",
+                    problems: [
+                        "格局开阔、反应迅速，敢闯敢拼敢表达，一堂课前期热情满满，遇到一点难题就急躁放弃；胜负欲极强，只能接受高分与表扬，一旦成绩落后心态崩盘，做事三分钟热度，擅长开拓新思路，却缺少深耕钻研的耐心，课堂听得浅，不愿打磨基础。",
+                        "不是理解能力弱，骨子里骄傲好面子，不肯低头夯实基础，觉得简单知识点没必要反复练习；只愿意挑战高难度题型，忽略底层积累，遭遇失败很难调整心态，抵触重复、枯燥的基础巩固训练。",
+                        "这样的天赋，各类活动、竞争都能脱颖而出，凡事不甘平庸，学习的秘诀是放平胜负心、建立长线学习目标，一味追求速成、好高骛远，很难稳定提升成绩，胆识出众的你，适配阶梯式分层进阶学习法！",
+                        "如何收敛急躁心态、兼顾基础与拔高，才是越学越轻松的学习秘籍。"
+                    ],
+                    subjects: {
+                        arts: "不屑背诵基础、作文追求华丽空洞、不愿积累素材",
+                        science: "轻视基础公式、急于攻克难题、计算粗心漏洞多",
+                        english: "嫌单词背诵枯燥、不愿日积月累、只求短期突击",
+                        summary: "学习好坏不只看野心，沉下心积累的耐心决定最终结果"
+                    }
+                },
+                careerPlanning: {
+                    mainTitle: "右脑发达，性格自信勇敢、领导力突出的人更适合的事业参考",
+                    jobs: [
+                        { type: "首选职业", name: "商务类", score: "90分", desc: "天生强大的沟通谈判能力、抗压能力是征服市场的王牌，敢于对接人脉、开拓资源，擅长把握机遇、促成合作，天生适合对外拓展型工作", tags: ["商业经营人才", "市场拓展人才", "招商谈判人才"] },
+                        { type: "次选职业", name: "艺术类", score: "80分", desc: "发达右脑自带极强表现力与感染力，舞台感、氛围感拉满，敢于展现自我，擅长调动观众情绪，具备原创表达天赋", tags: ["艺术表演人才", "文艺创作人才", "舞台主持人才"] },
+                        { type: "可选职业", name: "管理类", score: "70分", desc: "从小自带统领团队的天赋，有决断力、号召力，擅长统筹团队、分配任务，遇到问题敢拍板，能带动团队共同达成目标", tags: ["企业管理人才", "技术管理人才", "门店运营管理人才"] },
+                        { type: "备选职业", name: "营销类", score: "60分", desc: "思维灵活脑洞大，擅长打造吸引人的宣传方案，懂用户心理，擅长包装亮点、策划活动，持续产出新颖推广思路", tags: ["广告营销人才", "商务策划人才", "品牌推广人才"] }
+                    ],
+                    impactAnalysis: "赢者右脑发育优势明显，想象力、表达力、胆识远超常人，做事主动热情，不甘平庸，不惧竞争与挑战。擅长对外社交、统筹带领他人，面对压力能快速调整状态，适合所有需要与人打交道、竞争开拓类工作。\n短板是耐心不足、容易急躁，厌烦机械重复、枯燥单一的基础琐事，不适合长期独自埋头、无竞争、无上升空间的静态工作，长期做重复性内勤容易丧失动力。"
+                }
+            },
+        };
+
+        // ------------------ 1. 幼儿组题库 (3-6岁：偏向具象、家庭、小动物场景) ------------------
+        const questionsJunior = [
+            {
+                text: "如果家里来了一只超可爱的小猫咪，你第一反应最想做什么？",
+                options: [
+                    { text: "给小猫编一个神奇的童话故事，觉得它会飞", scores: { sizhe: 3 } },
+                    { text: "安安静静盯着它，观察它的胡须、尾巴有几根", scores: { xingzhe: 3 } },
+                    { text: "主动拿好吃的喂它，摸摸它，看它舒不舒服", scores: { dezhe: 3 } },
+                    { text: "要当小猫的指挥官，大声让它‘坐下’、‘立正’", scores: { yingzhe: 3 } }
+                ]
+            },
+            {
+                text: "周末爸爸妈妈要带你去从没去过的儿童乐园，你一路上会？",
+                options: [
+                    { text: "满脑子都在乱猜，问爸爸妈妈10万个为什么", scores: { sizhe: 3 } },
+                    { text: "乖乖拉着手，非常注意一路上看到的交通标志", scores: { xingzhe: 3 } },
+                    { text: "很乖不吵闹，只要跟爸爸妈妈在一起就很开心", scores: { dezhe: 3 } },
+                    { text: "一开门就想自己冲在最前面，带大家去玩最刺激的", scores: { yingzhe: 3 } }
+                ]
+            },
+            {
+                text: "在玩积木或者拼图的时候，你通常是怎么玩好它的？",
+                options: [
+                    { text: "不看图纸，天马行空胡乱拼，拼出一个怪怪物", scores: { sizhe: 3 } },
+                    { text: "一定要按照图纸上的方块，整整齐齐一个不差地拼", scores: { xingzhe: 3 } },
+                    { text: "像个仔细的小专家，会把所有颜色分类好再拼", scores: { xuezhe: 3 } },
+                    { text: "拼完了必须高高举起来，让家里所有人来夸自己", scores: { yingzhe: 3 } }
+                ]
+            },
+            {
+                text: "别的小朋友抢了你最心爱的玩具，你当时会怎么做？",
+                options: [
+                    { text: "小脑袋一转，拿另一个奇特的东西跟对方交换", scores: { sizhe: 3 } },
+                    { text: "不吵架也不抢，宁愿自己去玩别的，很好说话", scores: { dezhe: 3 } },
+                    { text: "理智地过去跟他讲道理：‘这是我的，你要排队’", scores: { xuezhe: 3 } },
+                    { text: "特别生气，一定要当场把它抢回来，绝不认输", scores: { yingzhe: 3 } }
+                ]
+            },
+            {
+                text: "看动画片的时候，你最喜欢什么样的卡通人物？",
+                options: [
+                    { text: "有很多神奇魔法、总是能变出奇妙点子的角色", scores: { sizhe: 3 } },
+                    { text: "话不多、但是每次都能把任务做得很棒的工匠", scores: { xingzhe: 3 } },
+                    { text: "很温柔、经常热心帮助动物朋友的爱心天使", scores: { dezhe: 3 } },
+                    { text: "聪明、能推理出谁是坏人并制定计划的侦探", scores: { xuezhe: 3 } }
+                ]
+            },
+            {
+                text: "如果今天晚上做梦，你最希望自己梦到住进一个什么样的神奇城堡？",
+                options: [
+                    { text: "糖果和天空中到处乱飞的玩具做成的、随时会变魔术的城堡", scores: { sizhe: 3 } },
+                    { text: "地板擦得亮晶晶，床和积木都摆得整整齐齐的坚固城堡", scores: { xingzhe: 3 } },
+                    { text: "里面住满了受伤的小动物，自己可以每天去照顾它们的爱心城堡", scores: { dezhe: 3 } },
+                    { text: "自己当威风的大国王，能指挥所有玩具士兵排队去打怪兽的城堡", scores: { yingzhe: 3 } }
+                ]
+            },
+            {
+                text: "老师在黑板上画了一个圆圈，让你在里面涂颜色或者画画，你会怎么做？",
+                options: [
+                    { text: "不按规律涂，把圆圈变成会飞的外星飞碟或者小怪物", scores: { sizhe: 3 } },
+                    { text: "安安静静地用彩色笔把里面涂满，绝对不把颜色涂到圈圈外面去", scores: { xingzhe: 3 } },
+                    { text: "像个仔细的小数数专家，一边涂一边数自己换了几种颜色", scores: { xuezhe: 3 } },
+                    { text: "一定要用最亮最酷的金色或红色，画完了让全班同学都来看", scores: { yingzhe: 3 } }
+                ]
+            },
+            {
+                text: "去游乐场玩滑滑梯的时候，如果前面有好多小朋友在排队，你会？",
+                options: [
+                    { text: "乖乖在后面拉着爸爸妈妈的手，一步一步跟着大伙慢慢挪", scores: { xingzhe: 3 } },
+                    { text: "不争不抢，如果有人不小心踩到你，你也觉得没关系、不哭鼻子", scores: { dezhe: 3 } },
+                    { text: "在心里悄悄数数计算：‘还有5个人就到我了’，非常理智清醒", scores: { xuezhe: 3 } },
+                    { text: "跑到最前面去当维持秩序的小队长，大喊：‘大家不要挤，听我的！’", scores: { yingzhe: 3 } }
+                ]
+            },
+            {
+                text: "如果爸爸妈妈买了一大袋好吃的饼干交给你，让你去分给其他小同伴：",
+                options: [
+                    { text: "计划天天变，一边分一边自己吃，分到最后丢三落四少了好几块", scores: { sizhe: 3 } },
+                    { text: "动作慢吞吞的，很好说话，谁跟你要你都给，宁愿自己不吃", scores: { dezhe: 3 } },
+                    { text: "非常公平和有规律，把饼干数清楚，每个人分到一模一样多的数量", scores: { xuezhe: 3 } },
+                    { text: "觉得自己像个大方的发糖司令，特别享受把饼干发给所有人时的自豪感", scores: { yingzhe: 3 } }
+                ]
+            },
+            {
+                text: "在幼儿园和小朋友一起玩捉迷藏，当你负责去抓大家的时候，你通常？",
+                options: [
+                    { text: "找着找着突然看到路边有一个好玩的小甲虫，就蹲下看甲虫忘记找人了", scores: { sizhe: 3 } },
+                    { text: "非常有韧劲，雷打不动，挨个把柜子后面、窗帘后面全部仔细搜一遍", scores: { xingzhe: 3 } },
+                    { text: "动作慢吞吞的，要是有人自己跑出来说‘我在这’，你就乐呵呵抱住他", scores: { dezhe: 3 } },
+                    { text: "像个厉害的小侦探，根据地上的脚印或者声音，一下子就推理出谁藏在哪", scores: { xuezhe: 3 } }
+                ]
+            },
+            {
+                text: "如果跟好朋友一起搭积木城堡，好朋友不小心碰倒了你刚刚搭好的一面墙：",
+                options: [
+                    { text: "完全不记仇，小脑袋一转：‘哇，这下变成火山爆发啦！我们重来！’", scores: { sizhe: 3 } },
+                    { text: "心里有点生闷气，冷冰冰地不说话，但是自己固执地非要重新搭好", scores: { xingzhe: 3 } },
+                    { text: "觉得没关系，安慰朋友说：‘不要哭，我陪你一起把这面墙再造起来’", scores: { dezhe: 3 } },
+                    { text: "特别要面子，有些着急，大喊：‘不能乱碰！接下来必须全听我的命令！’", scores: { yingzhe: 3 } }
+                ]
+            },
+            {
+                text: "如果家里突然停电了，屋子里变得黑乎乎的，你当时的第一反应是？",
+                options: [
+                    { text: "一点都不怕，缩在被子里假装自己是正在山洞里探险的超人", scores: { sizhe: 3 } },
+                    { text: "虽然心里有点怕，但会默默帮爸爸妈妈去抽屉里找手电筒，很靠谱", scores: { xingzhe: 3 } },
+                    { text: "慢吞吞抱住妈妈不松手，在熟悉的怀抱里觉得很安逸，不哭也不闹", scores: { dezhe: 3 } },
+                    { text: "保持冷静不抱怨，理智地告诉大家：‘别动，等爸爸把蜡烛点起来’", scores: { xuezhe: 3 } }
+                ]
+            },
+            {
+                text: "和小伙伴一起在沙滩上堆沙子，你最希望别人夸你是一个什么样的宝贝？",
+                options: [
+                    { text: "脑洞大开，能用沙子捏出各种稀奇古怪、别人没见过的创意的宝贝", scores: { sizhe: 3 } },
+                    { text: "懂得感恩、多才多艺，脾气级好，人缘第一的小天使宝贝", scores: { dezhe: 3 } },
+                    { text: "做事非常有条理、不造假、能独立高效把城堡地基拍得最扎实的宝贝", scores: { xuezhe: 3 } },
+                    { text: "天生有魄力、胆子非常大、能带头把沙子城堡盖得全场最高的领袖宝贝", scores: { yingzhe: 3 } }
+                ]
+            },
+            {
+                text: "如果下午吃点心的时候，老师让你去帮大家把小凳子一个个排整齐：",
+                options: [
+                    { text: "抗拒干这种一成不变的杂活，一会儿就丢三落四丢下凳子跑去玩了", scores: { sizhe: 3 } },
+                    { text: "这是细节控的强项，会专心致志、把凳子的四个角都对得整整齐齐", scores: { xingzhe: 3 } },
+                    { text: "虽然动作慢吞吞的，但是脾气好有耐心，一边磨时间一边全部摆完", scores: { dezhe: 3 } },
+                    { text: "为了能第一个拿到小红花或者得到老师大声表扬，会爆发出极高效率", scores: { yingzhe: 3 } }
+                ]
+            },
+            {
+                text: "当别的小朋友聚在一起为了抢一个皮球吵得不可开交、快要哭鼻子的时候：",
+                options: [
+                    { text: "突然扮个超级搞笑的鬼脸或者说句古怪的话，用幽默逗得大家哈哈大笑", scores: { sizhe: 3 } },
+                    { text: "完全不理他们吵架，自己一个人雷打不动地在一旁安安静静玩泥巴", scores: { xingzhe: 3 } },
+                    { text: "主动把自己的玩具让给他们：‘你们别吵啦，我的玩具给你们玩’", scores: { dezhe: 3 } },
+                    { text: "像个威风的小判官，大喊一声：‘都别吵了！排好队，轮流玩！’", scores: { yingzhe: 3 } }
+                ]
+            },
+            {
+                text: "如果在户外活动时不小心摔了一跤，膝盖有一点点疼，你会？",
+                options: [
+                    { text: "彻底摆烂坐在地上，缩进自己的白日梦里，等爸爸妈妈来抱抱", scores: { sizhe: 3 } },
+                    { text: "自己关上情绪大门不吭声，默默爬起来，极度怕受伤但很能吃苦", scores: { xingzhe: 3 } },
+                    { text: "非常理智勇敢，不抱怨也不哭，拍拍灰尘自己走，自控力很强", scores: { xuezhe: 3 } },
+                    { text: "死要面子绝不低头哭，心里憋着一股劲：‘我最勇敢了，我是第一名！’", scores: { yingzhe: 3 } }
+                ]
+            },
+            {
+                text: "如果今天可以自己决定穿什么衣服去上学，你更想选什么样的衣服？",
+                options: [
+                    { text: "颜色和造型最奇怪、以前从来没有试过的新奇创意衣服", scores: { sizhe: 3 } },
+                    { text: "一定要穿平时最习惯、穿起来最舒服、质量最好的那一件", scores: { xingzhe: 3 } },
+                    { text: "耳根子软，别人说哪件好看或者电视里哪个广告好看就穿哪件", scores: { dezhe: 3 } },
+                    { text: "有秩序感、按星期一到星期五的规律安排好，精明高效地穿上", scores: { xuezhe: 3 } }
+                ]
+            },
+            {
+                text: "在幼儿园和小朋友排队玩开小火车的游戏时，你最喜欢站在哪个位置？",
+                options: [
+                    { text: "站在中间，一路上朝旁边不停地挥手，满脑袋都在看周围好玩的事", scores: { sizhe: 3 } },
+                    { text: "站在车尾当个负责任的守卫，老老实实跟着队伍走，绝对不掉队", scores: { xingzhe: 3 } },
+                    { text: "站在哪里都行，动作慢吞吞的，只要能跟着大家乐呵呵地走就很满足", scores: { dezhe: 3 } },
+                    { text: "必须站在最前面当‘火车头’！负责带路和拉汽笛，特别享受指挥", scores: { yingzhe: 3 } }
+                ]
+            },
+            {
+                text: "在家里看到爸爸妈妈下班回来很累、在沙发上闭着眼睛休息，你会？",
+                options: [
+                    { text: "拿着自己刚拼好的奇特小汽车，兴奋地跑过去塞给爸爸妈妈看", scores: { sizhe: 3 } },
+                    { text: "虽然外表冷冰冰没说话，但会默默走过去帮爸爸妈妈把拖鞋拿过来", scores: { xingzhe: 3 } },
+                    { text: "情感极其细腻体贴，会温柔地走过去帮爸爸妈妈捶捶腿，贴在身边", scores: { dezhe: 3 } },
+                    { text: "非常有秩序，自己乖乖坐回小书桌旁独立写字，绝对不打扰大人", scores: { xuezhe: 3 } }
+                ]
+            },
+            {
+                text: "宝贝，回忆你现在在幼儿园的小生活，你觉得自己做哪件事时最棒？",
+                options: [
+                    { text: "我脑子里有源源不断、别的小朋友都想不到的超级创造力和好玩点子", scores: { sizhe: 3 } },
+                    { text: "我能够像大象一样包容大家、脾气好人缘棒、多才多艺的小天使心态", scores: { dezhe: 3 } },
+                    { text: "我精明高效、自控力极强、无惧任何吃苦考验的听话与聪明秩序", scores: { xuezhe: 3 } },
+                    { text: "我永远目标明确、胆子很大敢冒险、永不服输的勇敢小领袖气质", scores: { yingzhe: 3 } }
+                ]
+            }
+        ];
+
+        // ------------------ 2. 少儿组题库 (7-12岁：沿用上一轮学校、社交、作业矩阵) ------------------
+        
+        const questionsSenior = [
+            {
+                text: "如果周末爸爸妈妈带你去一个从来没去过的超大游乐园，你最想先做什么？",
+                options: [
+                    { text: "脑子里蹦出好多好玩的鬼点子，想自己去到处探险", scores: { sizhe: 3 } },
+                    { text: "安安静静地看地图或者跟着指示牌，一步一步认真走", scores: { xingzhe: 3 } },
+                    { text: "牵着爸爸妈妈的手，只要和家人在一起就很满足、很开心", scores: { dezhe: 3 } },
+                    { text: "勇敢地当小队长，带大家去玩最刺激的项目，一定要拿第一", scores: { yingzhe: 3 } }
+                ]
+            },
+            {
+                text: "在学校上手工课或者画画课的时候，你通常是怎样完成作品的？",
+                options: [
+                    { text: "不按老师教的来，天马行空乱画，想法多但经常做一半就累了", scores: { sizhe: 3 } },
+                    { text: "特别注重细节，一个步骤都不漏地把作品做得超级整齐", scores: { xingzhe: 3 } },
+                    { text: "像个仔细的小科学家，会自己推理和计算工具怎么用最省力", scores: { xuezhe: 3 } },
+                    { text: "想要自己的作品是全班最酷、最棒的，做完了要给所有人看", scores: { yingzhe: 3 } }
+                ]
+            },
+            {
+                text: "和小伙伴一起玩游戏，如果别的小朋友突然大声说你的方法是不对的，你会？",
+                options: [
+                    { text: "小脑袋转得飞快，立刻找各种好玩的理由和借口跟对方争辩", scores: { sizhe: 3 } },
+                    { text: "觉得没关系，不和小伙伴吵架，直接听他的，大家高高兴兴就好", scores: { dezhe: 3 } },
+                    { text: "非常理智，让他拿出书本或事实证据来，用道理说服他", scores: { xuezhe: 3 } },
+                    { text: "特别要面子，绝不服输，要当指挥大家的领头人，一定要听我的", scores: { yingzhe: 3 } }
+                ]
+            },
+            {
+                text: "你在平时背课文、记单词或者学新游戏规则的时候，感觉自己平时？",
+                options: [
+                    { text: "记新东西很快，但是忘得也特别快，不太喜欢死记硬背", scores: { sizhe: 3 } },
+                    { text: "能非常扎实地记住，过目不忘，不过规则要是变了会觉得难适应", scores: { xingzhe: 3 } },
+                    { text: "反应稍微有点慢，容易习惯性拖延，但多学几次就能记牢", scores: { dezhe: 3 } },
+                    { text: "非常自觉，能自己静下心来多线程、有条理地快速高效背完", scores: { xuezhe: 3 } }
+                ]
+            },
+            {
+                text: "爸爸妈妈或者老师，经常说你是一个爱“发呆”还是爱“动脑”的小孩？",
+                options: [
+                    { text: "特别喜欢一个人想一些稀奇古怪的科幻故事，活在自己的世界里", scores: { sizhe: 3 } },
+                    { text: "不喜欢胡思乱想，很注意身边的小细节，看到不整齐的东西就想摆好", scores: { xingzhe: 3 } },
+                    { text: "很知足，比较安于现状，平时乐呵呵的，不想太复杂的动脑问题", scores: { dezhe: 3 } },
+                    { text: "满脑子都是长大的宏大目标，虽然有时也累，但就是想做最厉害的人", scores: { yingzhe: 3 } }
+                ]
+            },
+            {
+                text: "班级要组织大扫除或者小组活动，你最喜欢在里面当什么角色？",
+                options: [
+                    { text: "点子发明家！负责想各种好玩的玩法，但不喜欢打扫垃圾等琐碎事", scores: { sizhe: 3 } },
+                    { text: "实干小模范！专心致志、负责任地把自己的那块地板擦得干干净净", scores: { xingzhe: 3 } },
+                    { text: "爱心小天使！脾气特别好，不抢风头，热心体贴地照顾每一个人", scores: { dezhe: 3 } },
+                    { text: "全盘大总管！负责记账、规划工具，帮大家把所有秩序调理好", scores: { xuezhe: 3 } }
+                ]
+            },
+            {
+                text: "如果原本计划好的去公园野餐，因为突然下大雨去不成了，你会？",
+                options: [
+                    { text: "完全不难过，能在家里“无中生有”发明新乐子，自己跟自己玩得嗨", scores: { sizhe: 3 } },
+                    { text: "心情会大受干扰，觉得计划被破坏了，有点难沟通、钻牛角尖", scores: { xingzhe: 3 } },
+                    { text: "理智保持冷静，默默拿出之前没看完的书继续吃苦钻研，不抱怨", scores: { xuezhe: 3 } },
+                    { text: "立刻随机应变，要求把家里客厅变成野餐营地，必须要玩得轰轰烈烈", scores: { yingzhe: 3 } }
+                ]
+            },
+            {
+                text: "别的小朋友或者好朋友和你相处时，他们最喜欢你的哪一点？",
+                options: [
+                    { text: "话不多但很靠谱，答应的事情绝对能做到，懂得感恩", scores: { xingzhe: 3 } },
+                    { text: "性格温柔、情感细腻，特别会安慰人，是个脾气超好的老好人", scores: { dezhe: 3 } },
+                    { text: "极度注重秩序，习惯独立高效且精明务实地处理好每项分工", scores: { xuezhe: 3 } },
+                    { text: "胆子很大，很大方也很护短，会像大哥哥大姐姐一样保护弱小", scores: { yingzhe: 3 } }
+                ]
+            },
+            {
+                text: "在安排自己的写作业时间和玩耍计划时，你平时是什么小风格？",
+                options: [
+                    { text: "计划天天变，全看当时的心情，经常写着作业突然就神游太空了", scores: { sizhe: 3 } },
+                    { text: "作业必须按部就班写完才能踏实去玩，一分钟也不愿意拖马虎", scores: { xingzhe: 3 } },
+                    { text: "能拖就拖，总是慢吞吞的，到最后关头才在催促下被动去写作业", scores: { dezhe: 3 } },
+                    { text: "效率非常高，做任何事都是带着极强的目标：赶紧写完我好去称霸游戏", scores: { yingzhe: 3 } }
+                ]
+            },
+            {
+                text: "如果遇到了一道特别难、怎么都想不出来的数学奥数题，你会？",
+                options: [
+                    { text: "表面上装模作样地看书，其实心里早就溜到外太空去想别的事情了", scores: { sizhe: 3 } },
+                    { text: "凭着一根筋的坚韧劲，咬紧牙关非要坐在那里把它解出来不可", scores: { xingzhe: 3 } },
+                    { text: "不抱怨、能吃苦，用严密的逻辑和公式进行推演，理智解决", scores: { xuezhe: 3 } },
+                    { text: "死要面子不服输，坚信自己能当最聪明的小孩，一定要挑战成功", scores: { yingzhe: 3 } }
+                ]
+            },
+            {
+                text: "对于学校里的校规、纪律，或者爸爸妈妈订的家规，你心里怎么想？",
+                options: [
+                    { text: "经常抗拒约束，喜欢用自己的高纬度小聪明去钻空子、藏东西", scores: { sizhe: 3 } },
+                    { text: "遵纪守法绝对不造假，觉得乖乖听话、做一个安逸的学生最省心", scores: { dezhe: 3 } },
+                    { text: "非常推崇秩序感，并倾向用规则来作为自己每天学习的雷打不动习惯", scores: { xuezhe: 3 } },
+                    { text: "是个潜在的小“破坏王”，为了赢得游戏有时敢大胆地打破一些旧规矩", scores: { yingzhe: 3 } }
+                ]
+            },
+            {
+                text: "当别的小朋友聚在一起吵得不可开交、快要哭鼻子的时候，你会？",
+                options: [
+                    { text: "突然说一个超级搞笑或者稀奇古怪的话，用幽默转移大家的注意力", scores: { sizhe: 3 } },
+                    { text: "过去当和事佬，安慰这个安慰那个，宁愿自己吃点亏也希望大家和好", scores: { dezhe: 3 } },
+                    { text: "保持彻底的客观独立，拉出对错因果帮团队理智寻找最好的解决办法", scores: { xuezhe: 3 } },
+                    { text: "释放出强烈的气场，大喊一声：“都别吵了，听我的！”一锤定音", scores: { yingzhe: 3 } }
+                ]
+            },
+            {
+                text: "如果你看到好朋友考试没考好，坐在座位上默默擦眼泪，你会？",
+                options: [
+                    { text: "用好玩的小笑话、小发明来逗他笑，虽然可能很快自己就忘去玩别的了", scores: { sizhe: 3 } },
+                    { text: "虽然外表冷冰冰没说什么，但会默默帮他递纸巾，情埋深藏", scores: { xingzhe: 3 } },
+                    { text: "情感极其细腻，感同身受地陪在他身边，甚至温柔地想跟着一起哭", scores: { dezhe: 3 } },
+                    { text: "拍拍胸脯安慰他：“别怕！下次我带你复习，我罩着你得第一！”", scores: { yingzhe: 3 } }
+                ]
+            },
+            {
+                text: "你最希望自己在别人眼里，是一个有着怎样“聪明”光环的小孩？",
+                options: [
+                    { text: "记忆力超强，任何细节都记在心里，做事踏实沉稳又负责", scores: { xingzhe: 3 } },
+                    { text: "多才多艺、脾气超级好，人缘公信力极高的小天使", scores: { dezhe: 3 } },
+                    { text: "精明高效、智商超群，依靠清晰逻辑和严谨事实被大家佩服", scores: { xuezhe: 3 } },
+                    { text: "是一个顶天立地、有魄力能拿第一的小领袖", scores: { yingzhe: 3 } }
+                ]
+            },
+            {
+                text: "当被爸爸妈妈严厉批评，觉得受挫或者委屈的时候，你通常表现出？",
+                options: [
+                    { text: "彻底摆烂，缩进自己天马行空的白日梦和玩具世界里逃避现实", scores: { sizhe: 3 } },
+                    { text: "关上房门冷冰冰不吭声，极度怕受伤，一根筋把自己封闭起来", scores: { xingzhe: 3 } },
+                    { text: "极其焦虑于自己的逻辑尊严受挫，闲不住地通过疯狂看书写字来排解", scores: { xuezhe: 3 } },
+                    { text: "死要面子绝不低头认输，把难过藏在心底，心里密谋要争口气证明自己", scores: { yingzhe: 3 } }
+                ]
+            },
+            {
+                text: "如果用你攒了很久的零花钱去买东西，你更倾向于买什么样的？",
+                options: [
+                    { text: "买那些造型奇特、以前没见过的创意古怪小玩具，哪怕质量一般", scores: { sizhe: 3 } },
+                    { text: "极度务实，精挑细选，只买最实用、最耐玩、质量最好的东西", scores: { xingzhe: 3 } },
+                    { text: "极易被广告或他人劝说打动，耳根子软容易妥协，慢吞吞跟风", scores: { dezhe: 3 } },
+                    { text: "非常多线程且精明，卡着自己的记账小本子，买性价比最高最值的", scores: { xuezhe: 3 } }
+                ]
+            },
+            {
+                text: "如果老师让你负责把100张杂乱的卡片按颜色和数字全部重新分类：",
+                options: [
+                    { text: "写作业抗拒装模作样，一会儿就丢三落四、忘东忘西地搞砸了细节", scores: { sizhe: 3 } },
+                    { text: "动作慢吞吞急死人，虽然动作不快，但脾气好能静下心来磨完", scores: { dezhe: 3 } },
+                    { text: "展现超群的自觉性，建立一套精明高效的整理秩序，刷刷几下干完", scores: { xuezhe: 3 } },
+                    { text: "觉得这种杂活大材小用了，但为了拿第一被表扬，会爆发出极强效率", scores: { yingzhe: 3 } }
+                ]
+            },
+            {
+                text: "去参加同班同学的生日派对时，你在人群中一般处于什么状态？",
+                options: [
+                    { text: "坐在角落里冷冰冰不吭声，默默观察周围，保持一点内向和警惕", scores: { xingzhe: 3 } },
+                    { text: "最随和、脾气最好的听众，默默帮寿星端蛋糕、照顾小一点的孩子", scores: { dezhe: 3 } },
+                    { text: "非常有规律，按时到达，理智自控地在规定区域内高效社交或吃东西", scores: { xuezhe: 3 } },
+                    { text: "自带光芒，大胆、爱惹人注意，绝对是全场派对最会带头玩的小核心", scores: { yingzhe: 3 } }
+                ]
+            },
+            {
+                text: "在生活中，你做决定是更相信脑袋里的灵光一闪，还是规则习惯？",
+                options: [
+                    { text: "极度依赖右脑一瞬间爆发出来的无限脑洞和好玩的新发明", scores: { sizhe: 3 } },
+                    { text: "坚定依靠老师和长辈教给自己的习惯，做事有固执负责的规矩", scores: { xingzhe: 3 } },
+                    { text: "完全依赖理智分析，铁证如山的事实和逻辑推导才是我的判断根据", scores: { xuezhe: 3 } },
+                    { text: "相信自己的目标直觉，只要我想得到的，我就一定要带头去做到", scores: { yingzhe: 3 } }
+                ]
+            },
+            {
+                text: "回顾你至今的小学生涯，你内心最值得自己骄傲的一点是什么？",
+                options: [
+                    { text: "我脑子里有源源不断、别人都想不出来的超级创造力", scores: { sizhe: 3 } },
+                    { text: "我脚踏实地做好的每一个作业成果，以及我做事负责的坚韧", scores: { xingzhe: 3 } },
+                    { text: "我能够像大象一样包容大家、人缘极好、能成就他人的和善心态", scores: { dezhe: 3 } },
+                    { text: "我精明高效、极具规律与逻辑、无惧任何吃苦考验的高智商秩序", scores: { xuezhe: 3 } }
+                ]
+            }
+        ];
+		
+		
+		// ================= 测评生命周期与算法绑定 =================
+        // ---------- 全局状态 ----------
+        // 固定的五维顺序（用于雷达图和维度分析的稳定展示，避免每次顺序变动）
+        const FIXED_DIMS = ['sizhe', 'xingzhe', 'dezhe', 'xuezhe', 'yingzhe'];
+
+        let currentQuestion = 0;
+        let answers = [];   // 每题选中的 index（回退时用来恢复选中态）
+        let scores = { sizhe: 0, xingzhe: 0, dezhe: 0, xuezhe: 0, yingzhe: 0 };
+        let questions = []; // 运行时题库
+        let isTransitioning = false; // 防连击锁
+
+        // 采集的用户基本信息
+        let userInfo = { name: "宝贝", gender: "男", ageGroup: "senior" };
+
+        // 缓存 DOM 引用，避免每次 getElementById（性能微优化）
+        const $ = (id) => document.getElementById(id);
+        const dom = {};
+        function cacheDom() {
+            ['startScreen', 'quizScreen', 'loadingScreen', 'resultScreen',
+             'childName', 'childGender', 'childAgeGroup',
+             'questionText', 'quizProgressText', 'percentText', 'progressBar',
+             'optionsContainer', 'prevBtn',
+             'resultTitle', 'resultIcon',
+             'resultSubtitle', 'matchScore', 'resultDesc',
+             'full-status', 'full-career', 'full-emotion',
+             'report-red-title', 'report-problems',
+             'subject-arts', 'subject-science', 'subject-english', 'subject-summary',
+             'career-main-title', 'career-jobs-box', 'career-impact',
+             'inviteBlockScreen', 'inviteBlockMessage',
+             'historyScreen', 'historyContent'
+            ].forEach(id => { dom[id] = $(id); });
+        }
+
+        // ---------- 启动 ----------
+        function startQuiz() {
+            const nameInput = dom.childName.value.trim();
+            userInfo.name = nameInput || "宝贝";
+            userInfo.gender = dom.childGender.value;
+            userInfo.ageGroup = dom.childAgeGroup.value;
+
+            questions = userInfo.ageGroup === 'junior' ? questionsJunior : questionsSenior;
+
+            currentQuestion = 0;
+            answers = [];
+            scores = { sizhe: 0, xingzhe: 0, dezhe: 0, xuezhe: 0, yingzhe: 0 };
+
+            dom.startScreen.classList.add('hidden');
+            dom.quizScreen.classList.remove('hidden');
+            showQuestion();
+        }
+
+        // ---------- 渲染当前题 ----------
+        function showQuestion() {
+            const q = questions[currentQuestion];
+            const total = questions.length;
+
+            dom.questionText.textContent = q.text;
+            dom.quizProgressText.textContent = `第 ${currentQuestion + 1} / ${total} 题`;
+            const percent = Math.round((currentQuestion / total) * 100) + '%';
+            dom.percentText.textContent = percent;
+            dom.progressBar.style.width = percent;
+
+            // 性能优化：使用 DocumentFragment 批量插入，避免多次 innerHTML 重解析
+            const frag = document.createDocumentFragment();
+            const prevChoice = answers[currentQuestion]; // 若曾答过此题，回退时恢复选中态
+
+            q.options.forEach((opt, idx) => {
+                const card = document.createElement('div');
+                card.className = 'option-card bg-white/95 border border-slate-200/80 rounded-xl p-4 shadow-sm cursor-pointer flex items-center justify-between transition-all duration-200 active:scale-[0.98]';
+                // 无障碍
+                card.setAttribute('role', 'button');
+                card.setAttribute('tabindex', '0');
+                card.setAttribute('aria-label', `选项 ${idx + 1}：${opt.text}`);
+                card.dataset.idx = idx;
+
+                card.innerHTML = `
+                    <span class="text-sm font-medium text-slate-700 leading-snug pr-2">${opt.text}</span>
+                    <span class="opt-circle w-5 h-5 rounded-full border border-slate-300 flex items-center justify-center text-xs text-white bg-transparent shrink-0 transition-all duration-200">
+                        <i class="fas fa-check scale-75 opacity-0 transition-opacity duration-200"></i>
+                    </span>
+                `;
+
+                if (prevChoice === idx) card.classList.add('is-selected');
+
+                card.addEventListener('click', () => selectOption(idx));
+                // 键盘可达：Enter / 空格触发
+                card.addEventListener('keydown', (e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        selectOption(idx);
+                    }
+                });
+
+                frag.appendChild(card);
+            });
+
+            dom.optionsContainer.replaceChildren(frag);
+            dom.prevBtn.disabled = currentQuestion === 0;
+            dom.optionsContainer.scrollTop = 0;
+        }
+
+        // ---------- 选择选项 ----------
+        function selectOption(idx) {
+            if (isTransitioning) return;
+            isTransitioning = true;
+
+            const q = questions[currentQuestion];
+            const opt = q.options[idx];
+
+            // 若这一题之前已回答过（用户回退再选），先撤销旧分
+            const oldIdx = answers[currentQuestion];
+            if (oldIdx !== undefined) {
+                const oldOpt = q.options[oldIdx];
+                for (const k in oldOpt.scores) {
+                    if (scores[k] !== undefined) scores[k] -= oldOpt.scores[k];
+                }
+            }
+            answers[currentQuestion] = idx;
+
+            // 累加新分
+            for (const k in opt.scores) {
+                if (scores[k] !== undefined) scores[k] += opt.scores[k];
+            }
+
+            // 视觉反馈：只切一个类，样式集中在 CSS
+            dom.optionsContainer.querySelectorAll('.option-card').forEach(c => c.classList.remove('is-selected'));
+            const selected = dom.optionsContainer.querySelector(`.option-card[data-idx="${idx}"]`);
+            if (selected) selected.classList.add('is-selected');
+
+            setTimeout(() => {
+                currentQuestion++;
+                if (currentQuestion < questions.length) {
+                    showQuestion();
+                } else {
+                    showResult();
+                }
+                isTransitioning = false;
+            }, 260);
+        }
+
+        // ---------- 上一题：保持已选态与分数一致性 ----------
+        function prevQuestion() {
+            if (currentQuestion === 0 || isTransitioning) return;
+            currentQuestion--;
+            showQuestion();
+        }
+
+        // ---------- 结果计算与渲染 ----------
+        function showResult() {
+            dom.quizScreen.classList.add('hidden');
+            dom.loadingScreen.classList.remove('hidden');
+
+            // 提前把大计算放到下一帧，避免阻塞加载动画首次绘制
+            requestAnimationFrame(() => {
+                setTimeout(renderResult, 700);
+            });
+        }
+
+        function renderResult() {
+            dom.loadingScreen.classList.add('hidden');
+            dom.resultScreen.classList.remove('hidden');
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+
+            // ==== 分数降序取 TOP1，作为主画像 ====
+            const sorted = Object.keys(scores)
+                .map(key => ({ key, score: scores[key] }))
+                .sort((a, b) => b.score - a.score);
+
+            const top1 = talentConfig[sorted[0].key];
+
+            // ==== 主画像：Header 区（title / icon / tags） ====
+            const titleSuffix = userInfo.gender === '男' ? '小王子' : '小公主';
+            const personalizedName = `${userInfo.name}${titleSuffix}`;
+
+            dom.resultTitle.textContent = `${personalizedName}的【${top1.name.split('一')[0]}】画像`;
+            dom.resultIcon.textContent = top1.icon;
+
+            // ==== 核心特质速览卡：特质胶囊 + 契合度 + 描述 ====
+            const totalScore = sorted.reduce((sum, item) => sum + item.score, 0);
+            const top1Ratio  = totalScore > 0 ? sorted[0].score / totalScore : 0;
+            // 主人格占比映射到 65~95% 的“契合度”区间，避免出现 20% 这种让家长困惑的低数字
+            const matchPercent = Math.min(95, Math.max(65, Math.round(top1Ratio * 100) + 40));
+            const shortName = top1.name.split('一')[0];        // "思者一鹰的视野" → "思者"
+            dom.resultSubtitle.textContent = `核心特质：${shortName}`;
+            dom.matchScore.textContent = `契合度 ${matchPercent}%`;
+            dom.resultDesc.textContent = top1.desc || '';
+
+            // ==== 三张深色核心报告卡（深度解读 / 测评报告 / 职业规划） ====
+            renderDeepReport(top1);
+
+            // ==== 邀请码：提交结果到后端（一人一次） ====
+            if (window.inviteService && window.inviteService.submitResult) {
+                window.inviteService.submitResult({
+                    childName: dom.childName.value.trim() || '未填写',
+                    childGender: dom.childGender.value || '未填写',
+                    ageGroup: dom.childAgeGroup.value || 'senior',
+                    answers: answers,
+                    result: {
+                        top1Key: sorted[0].key,
+                        top1: top1.name,
+                        top2: sorted[1] ? sorted[1].key : '',
+                        top3: sorted[2] ? sorted[2].key : '',
+                        matchPercent,
+                        scores: scores
+                    }
+                }).catch(err => {
+                    console.warn('[invite] submitResult failed:', err);
+                });
+            }
+        }
+
+        // ---------- 深度报告（修复原版 BUG：原代码嵌套在 showResult 内部从未被调用） ----------
+        function renderDeepReport(config) {
+            if (!config) return;
+
+            // 版块 1：深度解读
+            if (config.fullInterpretation) {
+                dom['full-status'].textContent = config.fullInterpretation.status || '';
+                dom['full-career'].textContent = config.fullInterpretation.careerAdvise || '';
+                dom['full-emotion'].textContent = config.fullInterpretation.emotionAdvise || '';
+            }
+
+            // 版块 2：专属测评报告
+            if (config.reportCard) {
+                dom['report-red-title'].textContent = config.reportCard.redTitle || '';
+
+                const problemsUl = dom['report-problems'];
+                problemsUl.innerHTML = '';
+                const problemsFrag = document.createDocumentFragment();
+                (config.reportCard.problems || []).forEach(prob => {
+                    const li = document.createElement('li');
+                    li.textContent = prob;
+                    problemsFrag.appendChild(li);
+                });
+                problemsUl.appendChild(problemsFrag);
+
+                const subj = config.reportCard.subjects || {};
+                dom['subject-arts'].textContent = subj.arts || '';
+                dom['subject-science'].textContent = subj.science || '';
+                dom['subject-english'].textContent = subj.english || '';
+                dom['subject-summary'].textContent = subj.summary || '';
+            }
+
+            // 版块 3：细化职业规划
+            if (config.careerPlanning) {
+                dom['career-main-title'].textContent = config.careerPlanning.mainTitle || '';
+                dom['career-impact'].textContent = config.careerPlanning.impactAnalysis || '';
+
+                const jobsBox = dom['career-jobs-box'];
+                jobsBox.innerHTML = '';
+                const jobsFrag = document.createDocumentFragment();
+                (config.careerPlanning.jobs || []).forEach(job => {
+                    const jobDiv = document.createElement('div');
+                    jobDiv.className = 'bg-white rounded-2xl border border-slate-200/70 p-4 space-y-2';
+                    const tagsHtml = (job.tags || []).map(t =>
+                        `<span class="text-[11px] font-medium text-indigo-700 bg-indigo-50 border border-indigo-100 px-2 py-0.5 rounded-full">${t}</span>`
+                    ).join('');
+                    jobDiv.innerHTML = `
+                        <div class="flex justify-between items-center gap-2">
+                            <span class="text-[13px] font-bold text-slate-800 leading-snug">${job.type}·${job.name}</span>
+                            <span class="text-[11px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-100 px-2 py-0.5 rounded-full whitespace-nowrap">${job.score}</span>
+                        </div>
+                        <p class="text-[13px] text-slate-600 leading-[1.8]">${job.desc}</p>
+                        <div class="flex flex-wrap gap-1.5 pt-0.5">${tagsHtml}</div>
+                    `;
+                    jobsFrag.appendChild(jobDiv);
+                });
+                jobsBox.appendChild(jobsFrag);
+            }
+        }
+
+        // ---------- 重新测试 ----------
+        function restartTest() {
+            currentQuestion = 0;
+            answers = [];
+            scores = { sizhe: 0, xingzhe: 0, dezhe: 0, xuezhe: 0, yingzhe: 0 };
+            dom.resultScreen.classList.add('hidden');
+            dom.startScreen.classList.remove('hidden');
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+
+        // 页面就绪后缓存 DOM，避免首次交互时的重复查询
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', () => {
+                cacheDom();
+                bootstrapInvite();
+            });
+        } else {
+            cacheDom();
+            bootstrapInvite();
+        }
+
+        // ========== 邀请码流程：页面启动时校验 ?k= 参数 ==========
+        async function bootstrapInvite() {
+            if (!window.inviteService) return; // 未接入邀请服务，走原流程
+
+            const params = new URLSearchParams(window.location.search);
+            const code = params.get('k') || params.get('code') || '';
+
+            // 显示 loading 状态
+            dom.inviteBlockScreen.classList.remove('hidden');
+            dom.inviteBlockMessage.innerHTML = `
+                <div class="text-center py-4">
+                    <div class="w-16 h-16 mx-auto mb-4 rounded-2xl bg-indigo-50 flex items-center justify-center">
+                        <i class="fas fa-spinner fa-spin text-2xl text-indigo-400"></i>
+                    </div>
+                    <h3 class="text-base font-bold text-slate-800 mb-2">正在校验邀请链接</h3>
+                    <p class="text-[13px] text-slate-500 leading-[1.7]">请稍候…</p>
+                </div>
+            `;
+
+            try {
+                const result = await window.inviteService.validate(code);
+
+                switch (result.status) {
+                    case 'missing':
+                        // 未提供邀请码：显示"请通过邀请链接访问"
+                        renderInviteBlock('missing', null);
+                        break;
+
+                    case 'invalid':
+                        // 无效邀请码：显示"邀请链接无效"
+                        renderInviteBlock('invalid', null);
+                        break;
+
+                    case 'completed':
+                        // 已完成：显示历史结果
+                        renderInviteBlock('completed', result);
+                        renderHistory(result);
+                        break;
+
+                    case 'ready':
+                        // 可开始测评：进入起始页
+                        dom.inviteBlockScreen.classList.add('hidden');
+                        dom.startScreen.classList.remove('hidden');
+                        window.scrollTo({ top: 0 });
+                        break;
+
+                    default:
+                        // 未知状态：降级为"未提供"
+                        renderInviteBlock('missing', null);
+                }
+            } catch (err) {
+                console.error('[invite] validate failed:', err);
+                // 网络异常：降级为"未提供"提示
+                renderInviteBlock('error', null);
+            }
+        }
+
+        // 渲染拦截页 / 历史页
+        function renderInviteBlock(status, payload) {
+            dom.startScreen.classList.add('hidden');
+            dom.quizScreen.classList.add('hidden');
+            dom.resultScreen.classList.add('hidden');
+
+            // completed 状态直接显示历史屏，不叠加拦截屏（避免"已完成"提示重复）
+            if (status === 'completed') {
+                dom.inviteBlockScreen.classList.add('hidden');
+                dom.historyScreen.classList.remove('hidden');
+                window.scrollTo({ top: 0 });
+                return;
+            }
+
+            // 其它异常状态：显示拦截屏
+            dom.inviteBlockScreen.classList.remove('hidden');
+            dom.historyScreen.classList.add('hidden');
+
+            const missingHtml = `
+                <div class="text-center">
+                    <div class="w-16 h-16 mx-auto mb-4 rounded-2xl bg-slate-100 flex items-center justify-center">
+                        <i class="fas fa-link text-2xl text-slate-400"></i>
+                    </div>
+                    <h3 class="text-base font-bold text-slate-800 mb-2">请通过邀请链接访问</h3>
+                    <p class="text-[13px] text-slate-500 leading-[1.7] mb-5">本测评仅对受邀用户开放。如已收到邀请码，可在下方输入后开始测评。</p>
+                    <div class="text-left">
+                        <label class="block text-[11px] font-semibold text-slate-500 mb-1.5 tracking-wide">邀请码</label>
+                        <input id="inviteCodeInput" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="5" autocomplete="off" spellcheck="false" placeholder="请输入 5 位数字邀请码"
+                            class="w-full px-3.5 py-2.5 text-sm text-slate-800 bg-white border border-slate-200 rounded-xl focus:outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 transition placeholder:text-slate-300 tracking-widest text-center font-mono" />
+                        <p id="inviteCodeError" class="hidden mt-2 text-[12px] text-rose-500 flex items-center gap-1">
+                            <i class="fas fa-circle-exclamation text-[11px]"></i><span></span>
+                        </p>
+                        <button id="inviteCodeSubmit" type="button"
+                            class="mt-4 w-full py-3 bg-gradient-to-r from-indigo-500 to-purple-600 text-white font-medium rounded-xl text-sm shadow-sm active:opacity-90 transition-opacity flex items-center justify-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed">
+                            <span class="btn-text">开始测评</span>
+                            <i class="fas fa-arrow-right text-xs btn-icon"></i>
+                        </button>
+                    </div>
+                </div>
+            `;
+
+            const invalidHtml = `
+                <div class="text-center">
+                    <div class="w-16 h-16 mx-auto mb-4 rounded-2xl bg-rose-50 flex items-center justify-center">
+                        <i class="fas fa-triangle-exclamation text-2xl text-rose-400"></i>
+                    </div>
+                    <h3 class="text-base font-bold text-slate-800 mb-2">邀请链接无效</h3>
+                    <p class="text-[13px] text-slate-500 leading-[1.7] mb-5">该链接已失效或不存在，请核对后重新输入，或联系邀请人重新获取。</p>
+                    <div class="text-left">
+                        <label class="block text-[11px] font-semibold text-slate-500 mb-1.5 tracking-wide">重新输入邀请码</label>
+                        <input id="inviteCodeInput" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="5" autocomplete="off" spellcheck="false" placeholder="请输入 5 位数字邀请码"
+                            class="w-full px-3.5 py-2.5 text-sm text-slate-800 bg-white border border-slate-200 rounded-xl focus:outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 transition placeholder:text-slate-300 tracking-widest text-center font-mono" />
+                        <p id="inviteCodeError" class="hidden mt-2 text-[12px] text-rose-500 flex items-center gap-1">
+                            <i class="fas fa-circle-exclamation text-[11px]"></i><span></span>
+                        </p>
+                        <button id="inviteCodeSubmit" type="button"
+                            class="mt-4 w-full py-3 bg-gradient-to-r from-indigo-500 to-purple-600 text-white font-medium rounded-xl text-sm shadow-sm active:opacity-90 transition-opacity flex items-center justify-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed">
+                            <span class="btn-text">重新校验</span>
+                            <i class="fas fa-arrow-right text-xs btn-icon"></i>
+                        </button>
+                    </div>
+                </div>
+            `;
+
+            const messages = {
+                missing: missingHtml,
+                invalid: invalidHtml,
+                error: `
+                    <div class="text-center">
+                        <div class="w-16 h-16 mx-auto mb-4 rounded-2xl bg-amber-50 flex items-center justify-center">
+                            <i class="fas fa-wifi text-2xl text-amber-500"></i>
+                        </div>
+                        <h3 class="text-base font-bold text-slate-800 mb-2">网络异常</h3>
+                        <p class="text-[13px] text-slate-500 leading-[1.7]">无法连接服务器，请检查网络后刷新页面重试。</p>
+                    </div>
+                `
+            };
+
+            dom.inviteBlockMessage.innerHTML = messages[status] || messages.missing;
+
+            // 为输入框 + 按钮绑定事件（missing / invalid 状态才有）
+            if (status === 'missing' || status === 'invalid') {
+                bindInviteCodeSubmit();
+            }
+
+            window.scrollTo({ top: 0 });
+        }
+
+        // 绑定邀请码手动提交交互
+        function bindInviteCodeSubmit() {
+            const input  = document.getElementById('inviteCodeInput');
+            const btn    = document.getElementById('inviteCodeSubmit');
+            const errBox = document.getElementById('inviteCodeError');
+            if (!input || !btn) return;
+
+            const showError = (msg) => {
+                if (!errBox) return;
+                errBox.classList.remove('hidden');
+                errBox.querySelector('span').textContent = msg;
+            };
+            const clearError = () => {
+                if (errBox) errBox.classList.add('hidden');
+            };
+            const setLoading = (loading) => {
+                btn.disabled = loading;
+                input.disabled = loading;
+                const txt = btn.querySelector('.btn-text');
+                const ico = btn.querySelector('.btn-icon');
+                if (loading) {
+                    if (txt) txt.textContent = '校验中…';
+                    if (ico) ico.className = 'fas fa-spinner fa-spin text-xs btn-icon';
+                } else {
+                    if (txt) txt.textContent = '开始测评';
+                    if (ico) ico.className = 'fas fa-arrow-right text-xs btn-icon';
+                }
+            };
+
+            // 输入时：自动过滤非数字 + 清除错误提示
+            input.addEventListener('input', () => {
+                const cleaned = (input.value || '').replace(/\D/g, '').slice(0, 5);
+                if (cleaned !== input.value) input.value = cleaned;
+                clearError();
+            });
+            input.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') { e.preventDefault(); btn.click(); }
+            });
+
+            btn.addEventListener('click', async () => {
+                const code = (input.value || '').trim();
+                if (!code) { showError('请输入邀请码'); input.focus(); return; }
+                if (!/^\d{5}$/.test(code)) {
+                    showError('邀请码为 5 位数字，请检查输入');
+                    input.focus();
+                    input.select();
+                    return;
+                }
+
+                clearError();
+                setLoading(true);
+                try {
+                    const result = await window.inviteService.validate(code);
+                    switch (result.status) {
+                        case 'ready':
+                            // 邀请码有效：把 code 写回 URL 便于分享 / 刷新保留，然后进起始页
+                            try {
+                                const url = new URL(window.location.href);
+                                url.searchParams.set('k', code);
+                                window.history.replaceState({}, '', url.toString());
+                            } catch {}
+                            dom.inviteBlockScreen.classList.add('hidden');
+                            dom.startScreen.classList.remove('hidden');
+                            window.scrollTo({ top: 0 });
+                            break;
+
+                        case 'completed':
+                            renderInviteBlock('completed', result);
+                            renderHistory(result);
+                            break;
+
+                        case 'invalid':
+                            showError('邀请码无效或已失效，请核对后重试');
+                            setLoading(false);
+                            input.focus();
+                            input.select();
+                            break;
+
+                        case 'error':
+                            showError(result.message || '服务暂时不可用，请稍后重试');
+                            setLoading(false);
+                            break;
+
+                        default:
+                            showError('无法识别的邀请码状态，请重试');
+                            setLoading(false);
+                    }
+                } catch (err) {
+                    console.error('[invite] 手动校验失败:', err);
+                    showError('网络异常，请稍后重试');
+                    setLoading(false);
+                }
+            });
+        }
+
+        // 渲染历史结果卡片（可点击进入完整报告）
+        function renderHistory(payload) {
+            if (!payload || !payload.result) return;
+
+            const result = payload.result;
+            const top1 = talentConfig[result.top1Key];
+            if (!top1) return;
+
+            // 日期兼容：优先取 meta.completed_at，兜底 payload.completed_at
+            const rawTime = (payload.meta && payload.meta.completed_at) || payload.completed_at;
+            let timeText = '';
+            if (rawTime) {
+                const d = new Date(rawTime);
+                if (!isNaN(d.getTime())) {
+                    timeText = d.toLocaleString('zh-CN', {
+                        year: 'numeric', month: '2-digit', day: '2-digit',
+                        hour: '2-digit', minute: '2-digit'
+                    });
+                }
+            }
+
+            dom.historyContent.innerHTML = `
+                <div id="historyCard" class="glass-panel rounded-2xl p-5 shadow-sm border border-slate-200/50 cursor-pointer transition hover:shadow-md hover:border-indigo-200 active:scale-[0.99]">
+                    <div class="flex justify-between items-center border-b border-slate-100 pb-3 mb-3 gap-2 flex-wrap">
+                        <span class="text-[13px] font-bold text-indigo-700 bg-indigo-50 px-2.5 py-1 rounded-lg">
+                            核心特质：${top1.name.split('一')[0]}
+                        </span>
+                        <span class="text-xs font-mono font-bold text-purple-600 bg-purple-50 px-2.5 py-1 rounded-lg">
+                            契合度 ${result.matchPercent || 0}%
+                        </span>
+                    </div>
+                    <p class="text-[13px] text-slate-700 leading-[1.85] tracking-wide text-justify">
+                        ${top1.desc}
+                    </p>
+                    <div class="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-xs">
+                        <span class="text-slate-400">
+                            ${timeText ? `<i class="fas fa-clock"></i> 测评完成于 ${timeText}` : '<i class="fas fa-clock"></i> 已完成测评'}
+                        </span>
+                        <span class="font-medium text-indigo-600 flex items-center gap-1">
+                            查看详细报告 <i class="fas fa-arrow-right text-[10px]"></i>
+                        </span>
+                    </div>
+                </div>
+            `;
+
+            const card = document.getElementById('historyCard');
+            if (card) {
+                card.addEventListener('click', () => showFullHistoryReport(payload));
+            }
+        }
+
+        // 从历史 payload 直接渲染完整测评结果页（与首次答完样式一致）
+        function showFullHistoryReport(payload) {
+            if (!payload || !payload.result) return;
+            const result = payload.result;
+            const meta   = payload.meta || {};
+            const top1   = talentConfig[result.top1Key];
+            if (!top1) return;
+
+            // 切屏：隐藏拦截 / 历史屏，显示结果屏
+            dom.inviteBlockScreen.classList.add('hidden');
+            dom.historyScreen.classList.add('hidden');
+            dom.startScreen.classList.add('hidden');
+            dom.quizScreen.classList.add('hidden');
+            dom.loadingScreen.classList.add('hidden');
+            dom.resultScreen.classList.remove('hidden');
+
+            // 主画像 Header
+            const childName   = meta.child_name || '宝贝';
+            const childGender = meta.child_gender || '';
+            const titleSuffix = childGender === '男' ? '小王子' : (childGender === '女' ? '小公主' : '小英雄');
+            const personalizedName = `${childName}${titleSuffix}`;
+            const shortName = top1.name.split('一')[0];
+
+            dom.resultTitle.textContent    = `${personalizedName}的【${shortName}】画像`;
+            dom.resultIcon.textContent     = top1.icon;
+            dom.resultSubtitle.textContent = `核心特质：${shortName}`;
+            dom.matchScore.textContent     = `契合度 ${result.matchPercent || 0}%`;
+            dom.resultDesc.textContent     = top1.desc || '';
+
+            // 三张深色核心报告卡
+            renderDeepReport(top1);
+
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+
+        // 移动端手势兼容优化
+        let lastTouchEnd = 0;
+        document.addEventListener('touchend', (e) => {
+            const now = Date.now();
+            if (now - lastTouchEnd <= 300) e.preventDefault();
+            lastTouchEnd = now;
+        }, false);
+        </script>
+    </div>
+</body>
+</html>
